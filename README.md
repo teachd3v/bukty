@@ -46,39 +46,24 @@ Portal pendaftaran resmi program **Bantuan UKT Yatim (BUKTY)** oleh **Dompet Dhu
    ```
 4. Menjalankan full-stack secara lokal dengan Wrangler (D1 & R2 lokal):
    ```bash
+   cp wrangler.example.jsonc wrangler.jsonc
    npx wrangler d1 execute bukty-db --local --file=./schema.sql
    npx wrangler pages dev dist
    ```
 
-## Setup & Deployment ke Cloudflare Pages
+## Setup & Deployment ke Cloudflare Pages (via GitHub)
 
-1. **Buat D1 Database**:
-   ```bash
-   npx wrangler d1 create bukty-db
-   ```
-   Salin `database_id` yang dihasilkan lalu ganti nilai `REPLACE_WITH_YOUR_BUKTY_D1_DATABASE_ID` pada file `wrangler.jsonc`.
-
-2. **Inisialisasi Skema Database**:
-   ```bash
-   npx wrangler d1 execute bukty-db --remote --file=./schema.sql
-   ```
-
-3. **Buat R2 Bucket**:
-   ```bash
-   npx wrangler r2 bucket create bukty-files
-   ```
-
-4. **Atur Environment Variables / Secrets di Cloudflare Pages**:
-   - `ADMIN_PASSWORD`: Password login dashboard `#admin` (default fallback lokal: `admin2026`).
-   - `API_INDONESIA_KEY`: (Opsional) API key dari [apiindonesia.id/produk/kampus](https://apiindonesia.id/produk/kampus) untuk pencarian PTN live PDDikti lewat `/api/kampus` (untuk lokal simpan di `.dev.vars`; jika kosong otomatis memakai daftar 85+ PTN/UIN/Politeknik Negeri bawaan).
-   - `GOOGLE_SHEET_WEBHOOK`: (Opsional) URL Apps Script webhook untuk sinkronisasi pendaftar ke Google Sheets.
-
-5. **Deploy**:
-   ```bash
-   npm run build
-   npx wrangler pages deploy dist --project-name=bukty
-   ```
-   Atau hubungkan repositori GitHub ini langsung ke Cloudflare Pages dengan:
+1. **Buat D1 Database (`bukty-db`)** di Cloudflare Dashboard → **Storage & Databases → D1 SQL Database**, lalu jalankan isi file `schema.sql` di tab **Console** D1.
+2. **Buat R2 Bucket (`bukty-files`)** di Cloudflare Dashboard → **R2 Object Storage**.
+3. **Import Repo GitHub ke Cloudflare Pages**:
    - **Build command**: `npm run build`
    - **Build output directory**: `dist`
-   - **Bindings**: D1 (`DB` → `bukty-db`) dan R2 (`FILES` → `bukty-files`).
+4. **Atur Bindings** di **Settings → Bindings** (Production & Preview):
+   - **D1 database**: Variable name `DB` → `bukty-db`
+   - **R2 bucket**: Variable name `FILES` → `bukty-files`
+5. **Atur Environment Variables / Secrets** di **Settings → Variables and Secrets**:
+   - `ADMIN_PASSWORD`: Password login dashboard `#admin` (wajib diisi di produksi).
+   - `NODE_VERSION`: `22`
+   - `API_INDONESIA_KEY`: (Opsional) API key dari [apiindonesia.id/produk/kampus](https://apiindonesia.id/produk/kampus) untuk pencarian PTN live PDDikti lewat `/api/kampus` (jika kosong otomatis memakai daftar 85+ PTN/UIN/Politeknik Negeri bawaan).
+   - `GOOGLE_SHEET_WEBHOOK`: (Opsional) URL Apps Script webhook untuk sinkronisasi pendaftar ke Google Sheets.
+6. **Retry deployment** setelah bindings & environment variables tersimpan.
