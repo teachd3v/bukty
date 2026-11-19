@@ -140,3 +140,65 @@ export async function onRequestPost({ request, env }) {
     );
   }
 }
+
+export async function onRequestDelete({ request, env }) {
+  try {
+    if (!env || !env.DB) {
+      return new Response(
+        JSON.stringify({ success: false, message: 'Database D1 tidak ditemukan' }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const body = await request.json();
+    const { fileKey, fileUrl } = body || {};
+
+    const columnMap = {
+      file1: ['file1_name', 'file1_url'],
+      file2: ['file2_name', 'file2_url'],
+      file3: ['file3_name', 'file3_url'],
+      pantukhir: ['pantukhir_file_name', 'pantukhir_file_url'],
+    };
+
+    const cols = columnMap[fileKey];
+    if (!cols) {
+      return new Response(
+        JSON.stringify({ success: false, message: 'Kunci dokumen tidak valid' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const [nameCol, urlCol] = cols;
+    const existing = await env.DB.prepare(`SELECT ${urlCol} AS url FROM announcements WHERE id = 1`).first();
+    const urlsToDelete = new Set(
+      [existing?.url, fileUrl].filter((u) => typeof u === 'string' && u.startsWith('/api/files/'))
+    );
+
+    if (env.FILES) {
+      for (const u of urlsToDelete) {
+        const objectKey = decodeURIComponent(u.replace('/api/files/', ''));
+        if (objectKey) {
+          try {
+            await env.FILES.delete(objectKey);
+          } catch (e) {}
+        }
+      }
+    }
+
+    await env.DB.prepare(
+      `UPDATE announcements SET ${nameCol} = '', ${urlCol} = '', updated_at = ? WHERE id = 1`
+    )
+      .bind(new Date().toISOString())
+      .run();
+
+    return new Response(
+      JSON.stringify({ success: true, message: 'Dokumen pengumuman berhasil dihapus' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ success: false, message: err.message }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+}

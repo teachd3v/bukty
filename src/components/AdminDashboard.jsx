@@ -474,6 +474,48 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     }
   };
 
+  const handleDeleteAnnouncementFile = async (fileKey, fileLabel) => {
+    const fileMap = {
+      file1,
+      file2,
+      file3,
+      pantukhir: pantukhirFile,
+    };
+    const currentFile = fileMap[fileKey];
+    if (!currentFile?.name) return;
+
+    if (!window.confirm(`Hapus "${currentFile.name}" dari ${fileLabel}?`)) return;
+
+    if (fileKey === 'pantukhir') setIsUploadingPantukhirFile(true);
+    else setIsUploadingFile((prev) => ({ ...prev, [fileKey]: true }));
+
+    try {
+      const res = await fetch('/api/admin/announcement', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileKey, fileUrl: currentFile.url }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        alert(`Gagal menghapus dokumen: ${json.message || 'Terjadi kesalahan'}`);
+        return;
+      }
+
+      if (fileKey === 'file1') setFile1({ name: '', url: '' });
+      if (fileKey === 'file2') setFile2({ name: '', url: '' });
+      if (fileKey === 'file3') setFile3({ name: '', url: '' });
+      if (fileKey === 'pantukhir') setPantukhirFile({ name: '', url: '' });
+
+      const inputEl = document.getElementById(`upload-ann-${fileKey}`);
+      if (inputEl) inputEl.value = '';
+    } catch (err) {
+      alert(`Error hapus dokumen: ${err.message}`);
+    } finally {
+      if (fileKey === 'pantukhir') setIsUploadingPantukhirFile(false);
+      else setIsUploadingFile((prev) => ({ ...prev, [fileKey]: false }));
+    }
+  };
+
   useEffect(() => {
     if (isAuthenticated) {
       fetchRegistrations();
@@ -1502,18 +1544,36 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                         <p className="text-[10px] text-red-600 font-bold italic">Belum ada file PDF diunggah.</p>
                       )}
                     </div>
-                    <div>
+                    <div className="flex items-center gap-2 shrink-0">
                       <input
                         type="file"
                         id={`upload-ann-${item.key}`}
                         accept="application/pdf"
                         className="hidden"
-                        onChange={(e) => e.target.files[0] && handleAnnouncementFileUpload(item.key, e.target.files[0])}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleAnnouncementFileUpload(item.key, f);
+                          e.target.value = '';
+                        }}
                       />
                       <label htmlFor={`upload-ann-${item.key}`} className="btn-yellow py-2 px-4 text-xs cursor-pointer">
                         <FileText className="w-3.5 h-3.5" />
-                        <span>{isUploadingFile[item.key] ? 'Mengunggah...' : 'Unggah PDF'}</span>
+                        <span>
+                          {isUploadingFile[item.key] ? 'Memproses...' : item.fileObj.name ? 'Ganti PDF' : 'Unggah PDF'}
+                        </span>
                       </label>
+                      {item.fileObj.name && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAnnouncementFile(item.key, item.label)}
+                          disabled={isUploadingFile[item.key]}
+                          className="inline-flex items-center gap-1.5 py-2 px-3 text-xs font-black bg-red-600 text-white border-2 border-[#111827] rounded-xl shadow-[2.5px_2.5px_0px_#111827] hover:bg-red-700 disabled:opacity-60 cursor-pointer transition-all"
+                          title="Hapus dokumen ini"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Hapus</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1566,18 +1626,38 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                     <p className="text-[10px] text-red-600 font-bold italic">Belum ada file SK diunggah.</p>
                   )}
                 </div>
-                <div>
+                <div className="flex items-center gap-2 shrink-0">
                   <input
                     type="file"
                     id="upload-ann-pantukhir"
                     accept="application/pdf"
                     className="hidden"
-                    onChange={(e) => e.target.files[0] && handleAnnouncementFileUpload('pantukhir', e.target.files[0])}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleAnnouncementFileUpload('pantukhir', f);
+                      e.target.value = '';
+                    }}
                   />
                   <label htmlFor="upload-ann-pantukhir" className="btn-yellow py-2 px-4 text-xs cursor-pointer">
                     <FileText className="w-3.5 h-3.5" />
-                    <span>{isUploadingPantukhirFile ? 'Mengunggah...' : 'Unggah SK PDF'}</span>
+                    <span>
+                      {isUploadingPantukhirFile ? 'Memproses...' : pantukhirFile.name ? 'Ganti SK PDF' : 'Unggah SK PDF'}
+                    </span>
                   </label>
+                  {pantukhirFile.name && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDeleteAnnouncementFile('pantukhir', 'SK Penetapan Penerima Program BUKTY 2027 (PDF)')
+                      }
+                      disabled={isUploadingPantukhirFile}
+                      className="inline-flex items-center gap-1.5 py-2 px-3 text-xs font-black bg-red-600 text-white border-2 border-[#111827] rounded-xl shadow-[2.5px_2.5px_0px_#111827] hover:bg-red-700 disabled:opacity-60 cursor-pointer transition-all"
+                      title="Hapus dokumen SK ini"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hapus</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
