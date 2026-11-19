@@ -31,12 +31,12 @@ export default function FaqSection() {
     <section id="faq" className="py-16 md:py-24 bg-[#FFFDF5] relative">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
         {/* Section Header */}
-        <div className="text-center max-w-xl mx-auto space-y-3">
+        <div className="text-center max-w-3xl mx-auto space-y-3">
           <div className="inline-flex items-center gap-2 bg-[#1D4ED8] text-white border-2 border-[#111827] px-4 py-1 rounded-full text-xs font-black shadow-[2.5px_2.5px_0px_#111827]">
             <HelpCircle className="w-3.5 h-3.5 text-[#FFD60A]" />
             <span>FAQ & TANYA JAWAB</span>
           </div>
-          <h2 className="text-3xl sm:text-4xl font-black font-heading text-[#111827]">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black font-heading text-[#111827]">
             Pertanyaan yang Sering Diajukan
           </h2>
           <p className="text-sm sm:text-base text-gray-700 font-semibold leading-relaxed">

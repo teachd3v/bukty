@@ -9,12 +9,12 @@ export default function TimelineSection() {
     <section id="jadwal" className="py-16 md:py-24 bg-[#EFF6FF] border-t-[3px] border-[#111827] relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
         {/* Section Header */}
-        <div className="text-center max-w-2xl mx-auto space-y-3">
+        <div className="text-center max-w-4xl mx-auto space-y-3">
           <div className="inline-flex items-center gap-2 bg-[#FFD60A] border-2 border-[#111827] px-4 py-1 rounded-full text-xs font-black shadow-[2.5px_2.5px_0px_#111827]">
             <Calendar className="w-3.5 h-3.5" />
             <span>JADWAL PELAKSANAAN NOV – DES 2026</span>
           </div>
-          <h2 className="text-3xl sm:text-4xl font-black font-heading text-[#111827]">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black font-heading text-[#111827]">
             7 Tahapan Seleksi Program BUKTY
           </h2>
           <p className="text-sm sm:text-base text-gray-700 font-semibold leading-relaxed">
