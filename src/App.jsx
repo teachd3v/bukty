@@ -169,7 +169,7 @@ export default function App() {
   }
 
   const marqueeText =
-    `PENDAFTARAN BUKTY (BANTUAN UKT YATIM) RESMI DIBUKA ${siteSchedule.registrationRangeLabel.toUpperCase()} • BANTUAN MAKS. RP 3.000.000/SEMESTER UNTUK 2 SEMESTER (PERIODE 2027) • PTN DI 12 PROVINSI • 100% GRATIS`;
+    `PENDAFTARAN BUKTY (BANTUAN UKT YATIM) RESMI DIBUKA ${siteSchedule.registrationRangeLabel.toUpperCase()} • BANTUAN MAKS. RP 3.000.000/SEMESTER UNTUK 2 SEMESTER (PERIODE 2027) • PTN DI 13 PROVINSI • 100% GRATIS`;
 
   return (
     <div className="min-h-screen flex flex-col relative selection:bg-[#FFD60A] selection:text-[#111827] bg-[#FFFDF5]">

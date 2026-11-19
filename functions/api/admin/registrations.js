@@ -14,6 +14,8 @@ const TARGET_PROVINCES = [
   'riau',
   'lampung',
   'jawa tengah',
+  'aceh',
+  'nanggroe aceh darussalam',
 ];
 
 function parseRp(val) {
@@ -55,7 +57,6 @@ function calculateScores(r) {
   let score_yatim = 30;
   if (yatimRaw === 'yatim piatu') score_yatim = 100;
   else if (yatimRaw === 'yatim') score_yatim = 90;
-  else if (yatimRaw === 'piatu') score_yatim = 80;
   else if (!yatimRaw && kondisiRaw.includes('meninggal')) score_yatim = 90;
 
   const tanggungan = parseInt(r.jumlah_tanggungan, 10) || 0;

@@ -294,7 +294,7 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
       if (!formData.pernahBeasiswaUkt) errors.push('Riwayat bantuan/beasiswa UKT sebelumnya wajib dipilih.');
       if (!formData.sedangBeasiswaLain) errors.push('Status penerima beasiswa/bantuan pendidikan lain saat ini wajib dipilih.');
     } else if (step === 3) {
-      if (!formData.statusYatim) errors.push('Status Orang Tua (Yatim / Piatu / Yatim Piatu / Lengkap) wajib dipilih.');
+      if (!formData.statusYatim) errors.push('Status Orang Tua (Yatim / Yatim Piatu / Lengkap) wajib dipilih.');
       if (!formData.namaOrtu || !formData.namaOrtu.trim()) errors.push('Nama Orang Tua / Wali wajib diisi.');
       if (!formData.pekerjaanOrtu || !formData.pekerjaanOrtu.trim()) errors.push('Pekerjaan Orang Tua / Wali wajib diisi.');
       if (!formData.penghasilanOrtu || formData.penghasilanOrtu === '0') errors.push('Penghasilan Orang Tua / Bulan wajib diisi.');
@@ -992,7 +992,7 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
                     </select>
                     {formData.provinsi && !isTargetProvince(formData.provinsi) && (
                       <span className="text-[10px] font-bold text-amber-700 mt-1 block">
-                        Catatan: Program BUKTY diprioritaskan bagi 12 provinsi wilayah program.
+                        Catatan: Program BUKTY diprioritaskan bagi 13 provinsi wilayah program.
                       </span>
                     )}
                   </div>
@@ -1475,7 +1475,7 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
                 {/* Highlight Status Orang Tua (Prioritas Yatim) */}
                 <div className="bg-[#FEF9C3] border-2 border-[#111827] p-4 rounded-2xl space-y-2 shadow-[3px_3px_0px_#111827]">
                   <label className="form-label text-[#111827]">Status Orang Tua (Prioritas Utama BUKTY) *</label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {STATUS_YATIM_LIST.map((opt) => (
                       <label
                         key={opt}

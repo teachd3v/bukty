@@ -126,7 +126,7 @@ export default function HeroSection({ onOpenForm, isClosed, schedule }) {
                 </div>
                 <div className="min-w-0">
                   <div className="text-[9px] sm:text-[10px] font-bold text-gray-500 leading-tight">Cakupan</div>
-                  <div className="font-black text-[11px] sm:text-xs text-[#111827] leading-tight mt-0.5">12 Provinsi</div>
+                  <div className="font-black text-[11px] sm:text-xs text-[#111827] leading-tight mt-0.5">13 Provinsi</div>
                 </div>
               </div>
             </div>

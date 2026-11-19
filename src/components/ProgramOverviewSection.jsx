@@ -72,7 +72,7 @@ export default function ProgramOverviewSection() {
           })}
         </div>
 
-        {/* 12 Target Provinces Showcase */}
+        {/* 13 Target Provinces Showcase */}
         <div className="bg-white border-[2.5px] md:border-[3px] border-[#111827] p-4 sm:p-8 rounded-2xl sm:rounded-3xl shadow-[4px_4px_0px_#111827] sm:shadow-[6px_6px_0px_#111827] space-y-3.5 sm:space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 border-b-2 border-[#111827] pb-3 sm:pb-4">
             <div className="flex items-center gap-2.5 sm:gap-3">
@@ -80,7 +80,7 @@ export default function ProgramOverviewSection() {
                 <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
               <div>
-                <h3 className="font-black text-base sm:text-xl text-[#111827] leading-tight">12 Provinsi Wilayah Program</h3>
+                <h3 className="font-black text-base sm:text-xl text-[#111827] leading-tight">13 Provinsi Wilayah Program</h3>
                 <p className="text-[11px] sm:text-xs font-semibold text-gray-600">
                   Berlaku untuk kampus PTN (S1/D4) di provinsi berikut:
                 </p>

@@ -17,11 +17,11 @@ export default function FaqSection({ schedule }) {
     },
     {
       q: 'Apakah mahasiswa non-yatim (dhuafa) boleh mendaftar?',
-      a: 'Boleh. Anak yatim/piatu/yatim piatu mendapat bobot prioritas utama, namun mahasiswa dhuafa yang memenuhi syarat tetap boleh mendaftar.',
+      a: 'Boleh. Anak yatim dan yatim piatu mendapat bobot prioritas utama, namun mahasiswa dhuafa yang memenuhi syarat tetap boleh mendaftar.',
     },
     {
-      q: 'Apakah mahasiswa PTS atau di luar 12 provinsi bisa daftar?',
-      a: 'Belum bisa. Periode ini khusus mahasiswa aktif S1/D4 PTN di 12 provinsi wilayah program.',
+      q: 'Apakah mahasiswa PTS atau di luar 13 provinsi bisa daftar?',
+      a: 'Belum bisa. Periode ini khusus mahasiswa aktif S1/D4 PTN di 13 provinsi wilayah program.',
     },
     {
       q: 'Apakah formulir bisa disimpan draft & kapan pengumuman dirilis?',

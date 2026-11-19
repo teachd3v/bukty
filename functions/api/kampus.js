@@ -154,12 +154,21 @@ const FALLBACK_PTN_LIST = [
   { name: 'Institut Teknologi Bacharuddin Jusuf Habibie', short_name: 'ITH', province_name: 'Sulawesi Selatan', regency_name: 'Kota Parepare' },
   { name: 'Politeknik Negeri Ujung Pandang', short_name: 'PNUP', province_name: 'Sulawesi Selatan', regency_name: 'Kota Makassar' },
   { name: 'Politeknik Pertanian Negeri Pangkajene Kepulauan', short_name: 'POLIPANGKEP', province_name: 'Sulawesi Selatan', regency_name: 'Kab. Pangkajene dan Kepulauan' },
+
+  // Aceh
+  { name: 'Universitas Syiah Kuala', short_name: 'USK', province_name: 'Aceh', regency_name: 'Kota Banda Aceh' },
+  { name: 'UIN Ar-Raniry Banda Aceh', short_name: 'UIN Ar-Raniry', province_name: 'Aceh', regency_name: 'Kota Banda Aceh' },
+  { name: 'Universitas Malikussaleh', short_name: 'UNIMAL', province_name: 'Aceh', regency_name: 'Kota Lhokseumawe / Kab. Aceh Utara' },
+  { name: 'Universitas Teuku Umar', short_name: 'UTU', province_name: 'Aceh', regency_name: 'Kab. Aceh Barat' },
+  { name: 'Universitas Samudra', short_name: 'UNSAM', province_name: 'Aceh', regency_name: 'Kota Langsa' },
+  { name: 'Institut Seni Budaya Indonesia Aceh', short_name: 'ISBI Aceh', province_name: 'Aceh', regency_name: 'Kab. Aceh Besar' },
+  { name: 'Politeknik Negeri Lhokseumawe', short_name: 'PNL', province_name: 'Aceh', regency_name: 'Kota Lhokseumawe' },
 ];
 
 function toReadableTitleCase(str) {
   if (!str) return '';
   if (str !== str.toUpperCase()) return str;
-  const keepUpper = new Set(['UIN', 'IAIN', 'STAIN', 'ITB', 'IPB', 'ITS', 'UI', 'UGM', 'UNY', 'UNJ', 'UPI', 'UNP', 'UNM', 'USU', 'UNRI', 'UNAIR', 'UNDIP', 'UNPAD', 'UNAND', 'UNSRI', 'UNHAS', 'UNILA', 'ITERA', 'UNTIRTA', 'UPN', 'UPNVJ', 'UPNVY', 'UPNVJT', 'ISI', 'ISBI', 'PENS', 'PPNS', 'PNJ', 'PNP', 'PNUP', 'POLBAN', 'POLINES', 'POLINEMA', 'POLSRI', 'POLMED', 'POLINELA', 'DKI', 'DI', 'K.H.', 'KH', 'M.', 'H.']);
+  const keepUpper = new Set(['UIN', 'IAIN', 'STAIN', 'ITB', 'IPB', 'ITS', 'UI', 'UGM', 'UNY', 'UNJ', 'UPI', 'UNP', 'UNM', 'USU', 'UNRI', 'UNAIR', 'UNDIP', 'UNPAD', 'UNAND', 'UNSRI', 'UNHAS', 'UNILA', 'ITERA', 'UNTIRTA', 'USK', 'UNIMAL', 'UTU', 'UNSAM', 'PNL', 'UPN', 'UPNVJ', 'UPNVY', 'UPNVJT', 'ISI', 'ISBI', 'PENS', 'PPNS', 'PNJ', 'PNP', 'PNUP', 'POLBAN', 'POLINES', 'POLINEMA', 'POLSRI', 'POLMED', 'POLINELA', 'DKI', 'DI', 'K.H.', 'KH', 'M.', 'H.']);
   const keepLower = new Set(['dan', 'di', 'ke', 'dari', 'untuk', 'yang']);
   return str
     .split(/\s+/)

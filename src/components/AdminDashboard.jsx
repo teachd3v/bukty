@@ -686,7 +686,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
   // Metrics
   const totalPendaftar = registrations.length;
   const yatimCount = registrations.filter((r) =>
-    ['yatim', 'piatu', 'yatim piatu'].includes((r.status_yatim || '').toLowerCase())
+    ['yatim', 'yatim piatu'].includes((r.status_yatim || '').toLowerCase())
   ).length;
   const lolosCount = registrations.filter(
     (r) => r.status_seleksi === 'Lolos Administrasi' || r.status_seleksi === 'Diterima'
@@ -815,7 +815,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
               <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-extrabold text-gray-500 uppercase">Yatim / Piatu</p>
+                  <p className="text-[10px] font-extrabold text-gray-500 uppercase">Yatim / Yatim Piatu</p>
                   <h3 className="text-2xl font-black text-[#1D4ED8] font-heading mt-0.5">{yatimCount}</h3>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-[#FFD60A] text-[#111827] border-2 border-[#111827] flex items-center justify-center">
@@ -1100,7 +1100,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                     onChange={(e) => setOnlyQualifiedLeaderboard(e.target.checked)}
                     className="accent-[#1D4ED8]"
                   />
-                  <span>Filter Ketat BUKTY (Islam, 12 Prov, PTN, IPK≥3, Non-Beasiswa)</span>
+                  <span>Filter Ketat BUKTY (Islam, 13 Prov, PTN, IPK≥3, Non-Beasiswa)</span>
                 </label>
 
                 <div className="relative mb-3">

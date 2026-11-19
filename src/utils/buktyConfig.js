@@ -8,7 +8,7 @@ export const REGISTRATION_DEADLINE_LABEL = '25 November 2026 pukul 23:59 WIB';
 // Set to true once announcement phase begins (direct hash routes #pengumuman & #pantukhir remain active)
 export const SHOW_ANNOUNCEMENT_MENUS = false;
 
-// 12 Target Provinces of BUKTY Program (from DRAFT_PROGRAM_BUKTY.docx)
+// 13 Target Provinces of BUKTY Program
 export const TARGET_PROVINCES = [
   'Jawa Timur',
   'Jawa Barat',
@@ -22,6 +22,7 @@ export const TARGET_PROVINCES = [
   'Riau',
   'Lampung',
   'Jawa Tengah',
+  'Aceh',
 ];
 
 export const AGAMA_LIST = [
@@ -47,7 +48,6 @@ export const PROVINSI_LIST = [
 export const STATUS_YATIM_LIST = [
   'Yatim Piatu',
   'Yatim',
-  'Piatu',
   'Orang Tua Lengkap',
 ];
 
@@ -300,7 +300,11 @@ export function isTargetProvince(provinsi) {
   const normalized = provinsi.trim().toLowerCase();
   return TARGET_PROVINCES.some((p) => {
     const target = p.toLowerCase();
-    return normalized === target || (target === 'di yogyakarta' && normalized === 'yogyakarta');
+    return (
+      normalized === target ||
+      (target === 'di yogyakarta' && normalized === 'yogyakarta') ||
+      (target === 'aceh' && normalized === 'nanggroe aceh darussalam')
+    );
   });
 }
 
@@ -310,7 +314,7 @@ export function checkBuktyEligibility(r) {
   const religion = (r.agama || '').trim().toLowerCase();
   if (religion !== 'islam') flags.push('Agama bukan Islam');
 
-  if (!isTargetProvince(r.provinsi)) flags.push('Di luar 12 provinsi program');
+  if (!isTargetProvince(r.provinsi)) flags.push('Di luar 13 provinsi program');
 
   const jenisPt = (r.jenis_pt || 'PTN').trim().toUpperCase();
   if (jenisPt !== 'PTN') flags.push('Bukan Perguruan Tinggi Negeri (PTN)');
@@ -347,7 +351,6 @@ export function calculateBuktyScores(r) {
   let score_yatim = 30;
   if (yatimRaw === 'yatim piatu') score_yatim = 100;
   else if (yatimRaw === 'yatim') score_yatim = 90;
-  else if (yatimRaw === 'piatu') score_yatim = 80;
   else if (!yatimRaw && kondisiRaw.includes('meninggal')) score_yatim = 90;
 
   // C. Tanggungan Keluarga (20%)
