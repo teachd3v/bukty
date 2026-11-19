@@ -2,13 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Banknote, GraduationCap, MapPin, Clock, Trophy, Megaphone } from 'lucide-react';
 import { REGISTRATION_DEADLINE_ISO, SHOW_ANNOUNCEMENT_MENUS } from '../utils/buktyConfig';
 
-export default function HeroSection({ onOpenForm, isClosed }) {
-  const targetDate = new Date(REGISTRATION_DEADLINE_ISO).getTime();
-  const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
+export default function HeroSection({ onOpenForm, isClosed, schedule }) {
+  const deadlineIso = schedule?.deadlineIso || REGISTRATION_DEADLINE_ISO;
+  const targetDate = new Date(deadlineIso).getTime();
+  const showAnnouncementMenus =
+    schedule?.showAnnouncementMenus !== undefined ? schedule.showAnnouncementMenus : SHOW_ANNOUNCEMENT_MENUS;
+  const registrationRange = schedule?.registrationRangeLabel || '19 – 25 Nov 2026';
+  const deadlineTimeShort = schedule?.deadlineTimeShort || '23:59 WIB';
 
-  function calculateTimeLeft() {
+  const calculateTimeLeft = (target) => {
     const now = new Date().getTime();
-    const difference = targetDate - now;
+    const difference = target - now;
     if (difference <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0 };
     return {
       days: Math.floor(difference / (1000 * 60 * 60 * 24)),
@@ -16,12 +20,15 @@ export default function HeroSection({ onOpenForm, isClosed }) {
       minutes: Math.floor((difference / 1000 / 60) % 60),
       seconds: Math.floor((difference / 1000) % 60),
     };
-  }
+  };
+
+  const [timeLeft, setTimeLeft] = useState(() => calculateTimeLeft(targetDate));
 
   useEffect(() => {
-    const timer = setInterval(() => setTimeLeft(calculateTimeLeft()), 1000);
+    setTimeLeft(calculateTimeLeft(targetDate));
+    const timer = setInterval(() => setTimeLeft(calculateTimeLeft(targetDate)), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [targetDate]);
 
   return (
     <section id="hero" className="pt-5 md:pt-16 pb-10 md:pb-24 relative overflow-hidden">
@@ -130,7 +137,9 @@ export default function HeroSection({ onOpenForm, isClosed }) {
                   <h4 className="font-black text-[11px] sm:text-xs text-[#111827] uppercase tracking-wide leading-tight">
                     {isClosed ? 'Pendaftaran Ditutup:' : 'Batas Pendaftaran:'}
                   </h4>
-                  <p className="text-[11px] sm:text-xs font-extrabold text-[#1D4ED8]">19 – 25 Nov 2026 (23:59 WIB)</p>
+                  <p className="text-[11px] sm:text-xs font-extrabold text-[#1D4ED8]">
+                    {registrationRange} ({deadlineTimeShort})
+                  </p>
                 </div>
               </div>
 
@@ -154,8 +163,8 @@ export default function HeroSection({ onOpenForm, isClosed }) {
               </div>
             </div>
 
-            {/* Secondary Action Buttons (hidden during registration phase; enable via SHOW_ANNOUNCEMENT_MENUS) */}
-            {SHOW_ANNOUNCEMENT_MENUS && (
+            {/* Secondary Action Buttons (controlled from Admin Dashboard Jadwal & Pengumuman) */}
+            {showAnnouncementMenus && (
               <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-3 pt-0.5">
                 <a
                   href="#pengumuman"

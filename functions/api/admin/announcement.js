@@ -1,4 +1,44 @@
-// Cloudflare Pages Function: GET / POST /api/admin/announcement
+// Cloudflare Pages Function: GET / POST / DELETE /api/admin/announcement
+async function ensureAnnouncementSchema(db) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS announcements (
+      id INTEGER PRIMARY KEY,
+      publish_time TEXT,
+      file1_name TEXT,
+      file1_url TEXT,
+      file2_name TEXT,
+      file2_url TEXT,
+      file3_name TEXT,
+      file3_url TEXT,
+      wa_group_admin_url TEXT,
+      pantukhir_publish_time TEXT,
+      pantukhir_file_name TEXT,
+      pantukhir_file_url TEXT,
+      wa_group_pantukhir_url TEXT,
+      timeline_json TEXT,
+      registration_deadline TEXT,
+      show_announcement_menus INTEGER DEFAULT 0,
+      updated_at TEXT
+    )
+  `).run();
+
+  const alterStatements = [
+    `ALTER TABLE announcements ADD COLUMN wa_group_admin_url TEXT`,
+    `ALTER TABLE announcements ADD COLUMN pantukhir_publish_time TEXT`,
+    `ALTER TABLE announcements ADD COLUMN pantukhir_file_name TEXT`,
+    `ALTER TABLE announcements ADD COLUMN pantukhir_file_url TEXT`,
+    `ALTER TABLE announcements ADD COLUMN wa_group_pantukhir_url TEXT`,
+    `ALTER TABLE announcements ADD COLUMN timeline_json TEXT`,
+    `ALTER TABLE announcements ADD COLUMN registration_deadline TEXT`,
+    `ALTER TABLE announcements ADD COLUMN show_announcement_menus INTEGER DEFAULT 0`,
+  ];
+  for (const stmt of alterStatements) {
+    try {
+      await db.prepare(stmt).run();
+    } catch (e) {}
+  }
+}
+
 export async function onRequestGet({ env }) {
   try {
     if (!env || !env.DB) {
@@ -8,38 +48,7 @@ export async function onRequestGet({ env }) {
       );
     }
 
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS announcements (
-        id INTEGER PRIMARY KEY,
-        publish_time TEXT,
-        file1_name TEXT,
-        file1_url TEXT,
-        file2_name TEXT,
-        file2_url TEXT,
-        file3_name TEXT,
-        file3_url TEXT,
-        wa_group_admin_url TEXT,
-        pantukhir_publish_time TEXT,
-        pantukhir_file_name TEXT,
-        pantukhir_file_url TEXT,
-        wa_group_pantukhir_url TEXT,
-        updated_at TEXT
-      )
-    `).run();
-
-    // Patch existing tables safely if migrated from older schema
-    const alterStatements = [
-      `ALTER TABLE announcements ADD COLUMN wa_group_admin_url TEXT`,
-      `ALTER TABLE announcements ADD COLUMN pantukhir_publish_time TEXT`,
-      `ALTER TABLE announcements ADD COLUMN pantukhir_file_name TEXT`,
-      `ALTER TABLE announcements ADD COLUMN pantukhir_file_url TEXT`,
-      `ALTER TABLE announcements ADD COLUMN wa_group_pantukhir_url TEXT`,
-    ];
-    for (const stmt of alterStatements) {
-      try {
-        await env.DB.prepare(stmt).run();
-      } catch (e) {}
-    }
+    await ensureAnnouncementSchema(env.DB);
 
     let config = await env.DB.prepare(`SELECT * FROM announcements WHERE id = 1`).first();
 
@@ -48,8 +57,8 @@ export async function onRequestGet({ env }) {
         INSERT INTO announcements (
           id, publish_time, file1_name, file1_url, file2_name, file2_url, file3_name, file3_url,
           wa_group_admin_url, pantukhir_publish_time, pantukhir_file_name, pantukhir_file_url,
-          wa_group_pantukhir_url, updated_at
-        ) VALUES (1, '', '', '', '', '', '', '', '', '', '', '', '', '')
+          wa_group_pantukhir_url, timeline_json, registration_deadline, show_announcement_menus, updated_at
+        ) VALUES (1, '', '', '', '', '', '', '', '', '', '', '', '', '', '', 0, '')
       `).run();
       config = {
         id: 1,
@@ -65,6 +74,9 @@ export async function onRequestGet({ env }) {
         pantukhir_file_name: '',
         pantukhir_file_url: '',
         wa_group_pantukhir_url: '',
+        timeline_json: '',
+        registration_deadline: '',
+        show_announcement_menus: 0,
         updated_at: '',
       };
     }
@@ -90,6 +102,8 @@ export async function onRequestPost({ request, env }) {
       );
     }
 
+    await ensureAnnouncementSchema(env.DB);
+
     const body = await request.json();
     const {
       publish_time,
@@ -104,15 +118,25 @@ export async function onRequestPost({ request, env }) {
       pantukhir_file_name,
       pantukhir_file_url,
       wa_group_pantukhir_url,
+      timeline_json,
+      registration_deadline,
+      show_announcement_menus,
     } = body;
+
+    const serializedTimeline =
+      typeof timeline_json === 'string'
+        ? timeline_json
+        : Array.isArray(timeline_json)
+        ? JSON.stringify(timeline_json)
+        : '';
 
     await env.DB.prepare(`
       INSERT OR REPLACE INTO announcements (
         id, publish_time, file1_name, file1_url, file2_name, file2_url, file3_name, file3_url,
         wa_group_admin_url, pantukhir_publish_time, pantukhir_file_name, pantukhir_file_url,
-        wa_group_pantukhir_url, updated_at
+        wa_group_pantukhir_url, timeline_json, registration_deadline, show_announcement_menus, updated_at
       )
-      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       publish_time || '',
       file1_name || '',
@@ -126,11 +150,14 @@ export async function onRequestPost({ request, env }) {
       pantukhir_file_name || '',
       pantukhir_file_url || '',
       wa_group_pantukhir_url || '',
+      serializedTimeline,
+      registration_deadline || '',
+      show_announcement_menus ? 1 : 0,
       new Date().toISOString()
     ).run();
 
     return new Response(
-      JSON.stringify({ success: true, message: 'Pengaturan pengumuman BUKTY berhasil diperbarui' }),
+      JSON.stringify({ success: true, message: 'Pengaturan jadwal & pengumuman BUKTY berhasil diperbarui' }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {

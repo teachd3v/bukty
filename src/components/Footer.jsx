@@ -2,7 +2,7 @@ import React from 'react';
 import { Instagram, Globe, MessageCircle, Mail, MapPin, GraduationCap } from 'lucide-react';
 import { SHOW_ANNOUNCEMENT_MENUS } from '../utils/buktyConfig';
 
-export default function Footer() {
+export default function Footer({ showAnnouncementMenus = SHOW_ANNOUNCEMENT_MENUS }) {
   return (
     <footer className="bg-[#0F172A] text-[#FFFDF5] pt-10 md:pt-14 pb-6 md:pb-8 border-t-4 border-[#FFD60A] relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 md:space-y-12">
@@ -60,7 +60,7 @@ export default function Footer() {
               <li><a href="#persyaratan" className="hover:text-[#FFD60A] transition-colors">Syarat & 13 Dokumen</a></li>
               <li><a href="#jadwal" className="hover:text-[#FFD60A] transition-colors">Jadwal Seleksi</a></li>
               <li><a href="#faq" className="hover:text-[#FFD60A] transition-colors">Tanya Jawab (FAQ)</a></li>
-              {SHOW_ANNOUNCEMENT_MENUS && (
+              {showAnnouncementMenus && (
                 <>
                   <li><a href="#pengumuman" className="hover:text-[#FFD60A] transition-colors">Pengumuman</a></li>
                   <li><a href="#pantukhir" className="hover:text-[#FFD60A] transition-colors">Daftar Penerima</a></li>

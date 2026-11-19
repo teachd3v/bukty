@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Download, Clock, ArrowLeft, Trophy, Eye, Search, CheckCircle, Users, X } from 'lucide-react';
+import { buildSiteSchedule } from '../utils/buktyConfig';
 
 export default function PantukhirPage() {
   const [loading, setLoading] = useState(true);
@@ -9,6 +10,8 @@ export default function PantukhirPage() {
   const [isReleased, setIsReleased] = useState(() => window.location.hash === '#bypasspantukhir');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewFile, setPreviewFile] = useState(null);
+
+  const schedule = buildSiteSchedule(config);
 
   useEffect(() => {
     const loadData = async () => {
@@ -118,7 +121,7 @@ export default function PantukhirPage() {
             <span className="text-[#1D4ED8]">(BUKTY) PERIODE 2027</span>
           </h1>
           <p className="text-xs sm:text-sm text-gray-600 font-bold max-w-2xl mx-auto leading-relaxed">
-            Daftar resmi mahasiswa yang lolos Tahap Konfirmasi dan ditetapkan sebagai penerima Bantuan UKT Yatim selama 2 semester periode 2027 (Jadwal: 30 November 2026).
+            Daftar resmi mahasiswa yang lolos Tahap Konfirmasi dan ditetapkan sebagai penerima Bantuan UKT Yatim selama 2 semester periode 2027 (Jadwal: {schedule.pantukhirDate}).
           </p>
         </div>
 
@@ -149,7 +152,7 @@ export default function PantukhirPage() {
                 </p>
               ) : (
                 <p className="text-xs text-gray-500 font-bold italic">
-                  Jadwal rilis Pantukhir sedang disiapkan oleh panitia (30 November 2026).
+                  Jadwal rilis Pantukhir sedang disiapkan oleh panitia ({schedule.pantukhirDate}).
                 </p>
               )}
             </div>
@@ -303,7 +306,7 @@ export default function PantukhirPage() {
                   </div>
                   <div>
                     <h4 className="font-extrabold text-[#15803D] text-xs uppercase tracking-wide">
-                      KESEPAKATAN BANTUAN (1 DESEMBER 2026)
+                      KESEPAKATAN BANTUAN ({schedule.agreementDate.toUpperCase()})
                     </h4>
                     <h3 className="font-black text-sm text-[#111827] mt-0.5">
                       Gabung Grup WhatsApp Penerima Program BUKTY
@@ -311,7 +314,7 @@ export default function PantukhirPage() {
                   </div>
                 </div>
                 <p className="text-xs text-gray-600 font-bold leading-relaxed">
-                  Bagi seluruh mahasiswa yang dinyatakan <strong>Diterima sebagai Penerima BUKTY</strong>, segera bergabung ke grup WhatsApp resmi panitia untuk penandatanganan Kesepakatan Bantuan (1 Desember 2026) dan proses Pembayaran UKT (2 Desember 2026).
+                  Bagi seluruh mahasiswa yang dinyatakan <strong>Diterima sebagai Penerima BUKTY</strong>, segera bergabung ke grup WhatsApp resmi panitia untuk penandatanganan Kesepakatan Bantuan ({schedule.agreementDate}) dan proses Pembayaran UKT ({schedule.paymentDate}).
                 </p>
                 <div>
                   <a

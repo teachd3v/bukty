@@ -3,14 +3,29 @@ export async function onRequestPost({ request, env }) {
   try {
     const data = await request.json();
 
-    // Automatic Deadline Enforcement: 25 November 2026 at 23:59:59 WIB (GMT+7)
+    // Automatic Deadline Enforcement (dynamic from D1 announcements table, fallback to 25 Nov 2026 23:59 WIB)
+    let deadlineIso = '2026-11-25T23:59:59+07:00';
+    if (env && env.DB) {
+      try {
+        const cfg = await env.DB.prepare(`SELECT registration_deadline FROM announcements WHERE id = 1`).first();
+        if (cfg && cfg.registration_deadline) {
+          const raw = String(cfg.registration_deadline).trim();
+          if (/([+-]\d{2}:\d{2}|Z)$/i.test(raw)) deadlineIso = raw;
+          else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) deadlineIso = `${raw}:59+07:00`;
+          else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(raw)) deadlineIso = `${raw}+07:00`;
+        }
+      } catch (e) {
+        // Column or table may not exist yet; use default deadline
+      }
+    }
+
     const now = new Date().getTime();
-    const deadline = new Date('2026-11-25T23:59:59+07:00').getTime();
-    if (now >= deadline) {
+    const deadline = new Date(deadlineIso).getTime();
+    if (!Number.isNaN(deadline) && now >= deadline) {
       return new Response(
         JSON.stringify({
           success: false,
-          message: 'Pendaftaran program BUKTY (Bantuan UKT Yatim) telah resmi ditutup pada 25 November 2026 pukul 23:59 WIB.',
+          message: 'Pendaftaran program BUKTY (Bantuan UKT Yatim) telah resmi ditutup sesuai batas jadwal yang ditetapkan panitia.',
         }),
         { status: 403, headers: { 'Content-Type': 'application/json' } }
       );

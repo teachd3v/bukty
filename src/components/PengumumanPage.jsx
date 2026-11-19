@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Download, Clock, ArrowLeft, Trophy, Eye, Users, X } from 'lucide-react';
+import { buildSiteSchedule } from '../utils/buktyConfig';
 
 export default function PengumumanPage() {
   const [loading, setLoading] = useState(true);
@@ -7,6 +8,8 @@ export default function PengumumanPage() {
   const [timeLeft, setTimeLeft] = useState(null);
   const [isReleased, setIsReleased] = useState(() => window.location.hash === '#bypasspengumuman');
   const [previewFile, setPreviewFile] = useState(null);
+
+  const schedule = buildSiteSchedule(config);
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -98,7 +101,7 @@ export default function PengumumanPage() {
             <span className="text-[#1D4ED8]">PROGRAM BANTUAN UKT YATIM (BUKTY)</span>
           </h1>
           <p className="text-xs sm:text-sm text-gray-600 font-bold max-w-xl mx-auto leading-relaxed">
-            Pengumuman resmi hasil peninjauan berkas pendaftaran BUKTY periode 2027 oleh panitia seleksi Dompet Dhuafa & GREAT Edunesia (Jadwal: 27 November 2026).
+            Pengumuman resmi hasil peninjauan berkas pendaftaran BUKTY periode 2027 oleh panitia seleksi Dompet Dhuafa & GREAT Edunesia (Jadwal: {schedule.adminAnnouncementDate}).
           </p>
         </div>
 
@@ -129,7 +132,7 @@ export default function PengumumanPage() {
                 </p>
               ) : (
                 <p className="text-xs text-gray-500 font-bold italic">
-                  Jadwal rilis pengumuman sedang disiapkan oleh panitia (27 November 2026).
+                  Jadwal rilis pengumuman sedang disiapkan oleh panitia ({schedule.adminAnnouncementDate}).
                 </p>
               )}
             </div>
@@ -174,7 +177,7 @@ export default function PengumumanPage() {
                   url: config?.file2_url,
                 },
                 {
-                  title: 'Jadwal Tahap Konfirmasi & Verifikasi Peserta BUKTY (28–29 Nov 2026)',
+                  title: `Jadwal Tahap Konfirmasi & Verifikasi Peserta BUKTY (${schedule.confirmationRangeLabel})`,
                   name: config?.file3_name,
                   url: config?.file3_url,
                 },
@@ -253,7 +256,7 @@ export default function PengumumanPage() {
                   </div>
                 </div>
                 <p className="text-xs text-gray-600 font-bold leading-relaxed">
-                  Bagi seluruh peserta yang dinyatakan <strong>Lolos Tahap Administrasi</strong>, harap segera bergabung ke grup WhatsApp resmi melalui tombol berikut untuk arahan teknis Tahap Konfirmasi (28–29 November 2026).
+                  Bagi seluruh peserta yang dinyatakan <strong>Lolos Tahap Administrasi</strong>, harap segera bergabung ke grup WhatsApp resmi melalui tombol berikut untuk arahan teknis Tahap Konfirmasi ({schedule.confirmationRangeLabel}).
                 </p>
                 <div>
                   <a

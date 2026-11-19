@@ -1,7 +1,11 @@
 import React from 'react';
 import { ArrowRight, Sparkles, ShieldCheck, Calendar } from 'lucide-react';
 
-export default function CtaSection({ onOpenForm, isClosed }) {
+export default function CtaSection({ onOpenForm, isClosed, schedule }) {
+  const deadlineShort = schedule?.deadlineShort || '25 Nov 2026 (23:59 WIB)';
+  const deadlineDateShort = schedule?.deadlineDateShort || '25 Nov 2026';
+  const deadlineTimeShort = schedule?.deadlineTimeShort || '23:59 WIB';
+
   return (
     <section id="daftar" className="py-10 md:py-22 bg-[#EFF6FF] border-t-[3px] border-[#111827] relative overflow-hidden">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
@@ -30,8 +34,8 @@ export default function CtaSection({ onOpenForm, isClosed }) {
           {/* Description */}
           <p className="text-xs sm:text-base text-blue-100 font-semibold max-w-xl mx-auto leading-relaxed">
             {isClosed
-              ? 'Pendaftaran berakhir pada 25 Nov 2026 (23:59 WIB). Pantau hasil seleksi di halaman Pengumuman & Penerima.'
-              : 'Siapkan 13 berkas sebelum mendaftar. Formulir ditutup 25 Nov 2026 pukul 23:59 WIB.'}
+              ? `Pendaftaran berakhir pada ${deadlineShort}. Pantau hasil seleksi di halaman Pengumuman & Penerima.`
+              : `Siapkan 13 berkas sebelum mendaftar. Formulir ditutup ${deadlineDateShort} pukul ${deadlineTimeShort}.`}
           </p>
 
           {/* CTA Action */}
@@ -64,7 +68,7 @@ export default function CtaSection({ onOpenForm, isClosed }) {
             <div className="w-1.5 h-1.5 rounded-full bg-[#FFD60A] hidden sm:block"></div>
             <div className="flex items-center gap-1.5">
               <Calendar className="w-4 h-4 text-[#FFD60A] shrink-0" />
-              <span>Batas: 25 Nov 2026</span>
+              <span>Batas: {deadlineDateShort}</span>
             </div>
           </div>
         </div>

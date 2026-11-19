@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { HelpCircle, ChevronDown } from 'lucide-react';
 
-export default function FaqSection() {
+export default function FaqSection({ schedule }) {
   const [openIndex, setOpenIndex] = useState(0);
+  const adminDate = schedule?.adminAnnouncementDate || '27 Nov 2026';
+  const pantukhirDate = schedule?.pantukhirDate || '30 Nov 2026';
 
   const faqs = [
     {
@@ -23,7 +25,7 @@ export default function FaqSection() {
     },
     {
       q: 'Apakah formulir bisa disimpan draft & kapan pengumuman dirilis?',
-      a: 'Draft tersimpan otomatis di browser sebelum dikirim. Pengumuman Administrasi (27 Nov) & Penerima Akhir (30 Nov) akan dirilis resmi di portal ini sesuai jadwal.',
+      a: `Draft tersimpan otomatis di browser sebelum dikirim. Pengumuman Administrasi (${adminDate}) & Penerima Akhir (${pantukhirDate}) akan dirilis resmi di portal ini sesuai jadwal.`,
     },
   ];
 

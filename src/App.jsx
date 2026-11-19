@@ -12,15 +12,34 @@ import CtaSection from './components/CtaSection';
 import PengumumanPage from './components/PengumumanPage';
 import PantukhirPage from './components/PantukhirPage';
 import { Sparkles } from 'lucide-react';
-import { REGISTRATION_DEADLINE_ISO, REGISTRATION_DEADLINE_LABEL } from './utils/buktyConfig';
+import { buildSiteSchedule } from './utils/buktyConfig';
 
 export default function App() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isAdminRoute, setIsAdminRoute] = useState(false);
   const [isPengumumanRoute, setIsPengumumanRoute] = useState(false);
   const [isPantukhirRoute, setIsPantukhirRoute] = useState(false);
+  const [siteSchedule, setSiteSchedule] = useState(() => buildSiteSchedule(null));
 
-  const targetDate = new Date(REGISTRATION_DEADLINE_ISO).getTime();
+  const fetchSiteSchedule = async () => {
+    try {
+      const res = await fetch('/api/announcement');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setSiteSchedule(buildSiteSchedule(json.data));
+        }
+      }
+    } catch (e) {
+      // Fallback safely to default schedule in buktyConfig
+    }
+  };
+
+  useEffect(() => {
+    fetchSiteSchedule();
+  }, []);
+
+  const targetDate = new Date(siteSchedule.deadlineIso).getTime();
   const [isClosed, setIsClosed] = useState(false);
 
   useEffect(() => {
@@ -34,7 +53,7 @@ export default function App() {
 
   const handleOpenForm = () => {
     if (new Date().getTime() >= targetDate) {
-      alert(`Pendaftaran program BUKTY (Bantuan UKT Yatim) telah resmi ditutup pada ${REGISTRATION_DEADLINE_LABEL}.`);
+      alert(`Pendaftaran program BUKTY (Bantuan UKT Yatim) telah resmi ditutup pada ${siteSchedule.deadlineLabel}.`);
       return;
     }
     setIsFormOpen(true);
@@ -86,6 +105,7 @@ export default function App() {
       <AdminDashboard
         onLeaveAdmin={() => {
           setIsAdminRoute(false);
+          fetchSiteSchedule();
           if (window.location.pathname !== '/') {
             window.history.replaceState(null, '', '/');
           } else {
@@ -99,11 +119,11 @@ export default function App() {
   if (isPengumumanRoute) {
     return (
       <div className="min-h-screen flex flex-col relative selection:bg-[#FFD60A] selection:text-[#111827] bg-[#FFFDF5]">
-        <Navbar onOpenForm={handleOpenForm} isClosed={isClosed} />
+        <Navbar showAnnouncementMenus={siteSchedule.showAnnouncementMenus} />
         <main className="flex-grow">
           <PengumumanPage />
         </main>
-        <Footer />
+        <Footer showAnnouncementMenus={siteSchedule.showAnnouncementMenus} />
         <RegistrationFormModal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} />
       </div>
     );
@@ -112,18 +132,18 @@ export default function App() {
   if (isPantukhirRoute) {
     return (
       <div className="min-h-screen flex flex-col relative selection:bg-[#FFD60A] selection:text-[#111827] bg-[#FFFDF5]">
-        <Navbar onOpenForm={handleOpenForm} isClosed={isClosed} />
+        <Navbar showAnnouncementMenus={siteSchedule.showAnnouncementMenus} />
         <main className="flex-grow">
           <PantukhirPage />
         </main>
-        <Footer />
+        <Footer showAnnouncementMenus={siteSchedule.showAnnouncementMenus} />
         <RegistrationFormModal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} />
       </div>
     );
   }
 
   const marqueeText =
-    'PENDAFTARAN BUKTY (BANTUAN UKT YATIM) RESMI DIBUKA 19–25 NOV 2026 • BANTUAN MAKS. RP 3.000.000/SEMESTER UNTUK 2 SEMESTER (PERIODE 2027) • PTN DI 12 PROVINSI • 100% GRATIS';
+    `PENDAFTARAN BUKTY (BANTUAN UKT YATIM) RESMI DIBUKA ${siteSchedule.registrationRangeLabel.toUpperCase()} • BANTUAN MAKS. RP 3.000.000/SEMESTER UNTUK 2 SEMESTER (PERIODE 2027) • PTN DI 12 PROVINSI • 100% GRATIS`;
 
   return (
     <div className="min-h-screen flex flex-col relative selection:bg-[#FFD60A] selection:text-[#111827] bg-[#FFFDF5]">
@@ -142,18 +162,18 @@ export default function App() {
         </div>
       </div>
 
-      <Navbar onOpenForm={handleOpenForm} isClosed={isClosed} />
+      <Navbar showAnnouncementMenus={siteSchedule.showAnnouncementMenus} />
 
       <main className="flex-grow">
-        <HeroSection onOpenForm={handleOpenForm} isClosed={isClosed} />
+        <HeroSection onOpenForm={handleOpenForm} isClosed={isClosed} schedule={siteSchedule} />
         <ProgramOverviewSection />
         <RequirementsSection onOpenForm={handleOpenForm} isClosed={isClosed} />
-        <TimelineSection />
-        <FaqSection />
-        <CtaSection onOpenForm={handleOpenForm} isClosed={isClosed} />
+        <TimelineSection schedule={siteSchedule} />
+        <FaqSection schedule={siteSchedule} />
+        <CtaSection onOpenForm={handleOpenForm} isClosed={isClosed} schedule={siteSchedule} />
       </main>
 
-      <Footer />
+      <Footer showAnnouncementMenus={siteSchedule.showAnnouncementMenus} />
 
       <RegistrationFormModal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} />
     </div>

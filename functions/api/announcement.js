@@ -29,6 +29,9 @@ export async function onRequestGet({ env }) {
         pantukhir_file_name: '',
         pantukhir_file_url: '',
         wa_group_pantukhir_url: '',
+        timeline_json: '',
+        registration_deadline: '',
+        show_announcement_menus: 0,
       };
     }
 

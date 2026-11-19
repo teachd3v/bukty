@@ -58,9 +58,102 @@ export const BANK_LIST = [
   'Bank Neo Commerce', 'Bank Muamalat', 'Bank Mega', 'Bank Sinarmas', 'Bank Bukopin', 'Lainnya',
 ];
 
+const MONTHS_SHORT_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const MONTHS_LONG_ID = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+];
+
+function parseYmdParts(ymd) {
+  const match = String(ymd || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return {
+    year: parseInt(match[1], 10),
+    month: parseInt(match[2], 10) - 1,
+    day: parseInt(match[3], 10),
+  };
+}
+
+export function formatShortDateRangeId(startYmd, endYmd) {
+  const s = parseYmdParts(startYmd);
+  const e = parseYmdParts(endYmd || startYmd);
+  if (!s) return '';
+  if (!e || (s.year === e.year && s.month === e.month && s.day === e.day)) {
+    return `${s.day} ${MONTHS_SHORT_ID[s.month]} ${s.year}`;
+  }
+  if (s.year === e.year && s.month === e.month) {
+    return `${s.day} – ${e.day} ${MONTHS_SHORT_ID[s.month]} ${s.year}`;
+  }
+  if (s.year === e.year) {
+    return `${s.day} ${MONTHS_SHORT_ID[s.month]} – ${e.day} ${MONTHS_SHORT_ID[e.month]} ${s.year}`;
+  }
+  return `${s.day} ${MONTHS_SHORT_ID[s.month]} ${s.year} – ${e.day} ${MONTHS_SHORT_ID[e.month]} ${e.year}`;
+}
+
+export function toWibIso(value, fallbackIso = REGISTRATION_DEADLINE_ISO) {
+  const raw = String(value || '').trim();
+  if (!raw) return fallbackIso;
+  if (/([+-]\d{2}:\d{2}|Z)$/i.test(raw)) return raw;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) return `${raw}:59+07:00`;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(raw)) return `${raw}+07:00`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return `${raw}T23:59:59+07:00`;
+  return fallbackIso;
+}
+
+export function toDatetimeLocalValue(isoOrLocal) {
+  const raw = String(isoOrLocal || '').trim();
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
+  return match ? match[1] : '2026-11-25T23:59';
+}
+
+export function formatDeadlinePartsId(isoOrLocal) {
+  const iso = toWibIso(isoOrLocal);
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!match) {
+    return {
+      longLabel: REGISTRATION_DEADLINE_LABEL,
+      shortLabel: '25 Nov 2026 (23:59 WIB)',
+      dateShort: '25 Nov 2026',
+      timeShort: '23:59 WIB',
+    };
+  }
+  const year = parseInt(match[1], 10);
+  const monthIdx = parseInt(match[2], 10) - 1;
+  const day = parseInt(match[3], 10);
+  const hh = match[4];
+  const mm = match[5];
+  const dateShort = `${day} ${MONTHS_SHORT_ID[monthIdx]} ${year}`;
+  const dateLong = `${day} ${MONTHS_LONG_ID[monthIdx]} ${year}`;
+  const timeShort = `${hh}:${mm} WIB`;
+  return {
+    longLabel: `${dateLong} pukul ${timeShort}`,
+    shortLabel: `${dateShort} (${timeShort})`,
+    dateShort,
+    timeShort,
+  };
+}
+
+export function formatTimelinePeriodBadge(events) {
+  if (!Array.isArray(events) || events.length === 0) return 'JADWAL NOV – DES 2026';
+  const first = parseYmdParts(events[0]?.startDate || events[0]?.startIso);
+  const last = parseYmdParts(events[events.length - 1]?.endDate || events[events.length - 1]?.endIso);
+  if (!first || !last) return 'JADWAL SELEKSI BUKTY';
+  const m1 = MONTHS_SHORT_ID[first.month].toUpperCase();
+  const m2 = MONTHS_SHORT_ID[last.month].toUpperCase();
+  if (first.year === last.year && first.month === last.month) {
+    return `JADWAL ${m1} ${first.year}`;
+  }
+  if (first.year === last.year) {
+    return `JADWAL ${m1} – ${m2} ${first.year}`;
+  }
+  return `JADWAL ${m1} ${first.year} – ${m2} ${last.year}`;
+}
+
 export const SCHEDULE_EVENTS = [
   {
     date: '19 – 25 Nov 2026',
+    startDate: '2026-11-19',
+    endDate: '2026-11-25',
     startIso: '2026-11-19T00:00:00+07:00',
     endIso: '2026-11-25T23:59:59+07:00',
     title: 'Pendaftaran',
@@ -68,6 +161,8 @@ export const SCHEDULE_EVENTS = [
   },
   {
     date: '26 Nov 2026',
+    startDate: '2026-11-26',
+    endDate: '2026-11-26',
     startIso: '2026-11-26T00:00:00+07:00',
     endIso: '2026-11-26T23:59:59+07:00',
     title: 'Tahap Administrasi',
@@ -75,6 +170,8 @@ export const SCHEDULE_EVENTS = [
   },
   {
     date: '27 Nov 2026',
+    startDate: '2026-11-27',
+    endDate: '2026-11-27',
     startIso: '2026-11-27T00:00:00+07:00',
     endIso: '2026-11-27T23:59:59+07:00',
     title: 'Pengumuman Administrasi',
@@ -82,6 +179,8 @@ export const SCHEDULE_EVENTS = [
   },
   {
     date: '28 – 29 Nov 2026',
+    startDate: '2026-11-28',
+    endDate: '2026-11-29',
     startIso: '2026-11-28T00:00:00+07:00',
     endIso: '2026-11-29T23:59:59+07:00',
     title: 'Tahap Konfirmasi',
@@ -89,6 +188,8 @@ export const SCHEDULE_EVENTS = [
   },
   {
     date: '30 Nov 2026',
+    startDate: '2026-11-30',
+    endDate: '2026-11-30',
     startIso: '2026-11-30T00:00:00+07:00',
     endIso: '2026-11-30T23:59:59+07:00',
     title: 'Pengumuman Penerima',
@@ -96,6 +197,8 @@ export const SCHEDULE_EVENTS = [
   },
   {
     date: '1 Des 2026',
+    startDate: '2026-12-01',
+    endDate: '2026-12-01',
     startIso: '2026-12-01T00:00:00+07:00',
     endIso: '2026-12-01T23:59:59+07:00',
     title: 'Kesepakatan Bantuan',
@@ -103,12 +206,82 @@ export const SCHEDULE_EVENTS = [
   },
   {
     date: '2 Des 2026',
+    startDate: '2026-12-02',
+    endDate: '2026-12-02',
     startIso: '2026-12-02T00:00:00+07:00',
     endIso: '2026-12-02T23:59:59+07:00',
     title: 'Pembayaran UKT',
     desc: 'Penyaluran bantuan UKT periode 2027.',
   },
 ];
+
+export function normalizeTimelineEvents(rawInput) {
+  let parsed = rawInput;
+  if (typeof rawInput === 'string') {
+    const trimmed = rawInput.trim();
+    if (!trimmed) return SCHEDULE_EVENTS.map((item) => ({ ...item }));
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (e) {
+      return SCHEDULE_EVENTS.map((item) => ({ ...item }));
+    }
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    return SCHEDULE_EVENTS.map((item) => ({ ...item }));
+  }
+
+  return parsed.map((item, idx) => {
+    const fallback = SCHEDULE_EVENTS[idx] || SCHEDULE_EVENTS[SCHEDULE_EVENTS.length - 1];
+    const startDate =
+      (item?.startDate && /^\d{4}-\d{2}-\d{2}$/.test(item.startDate) && item.startDate) ||
+      String(item?.startIso || '').slice(0, 10) ||
+      fallback.startDate;
+    const endDateRaw =
+      (item?.endDate && /^\d{4}-\d{2}-\d{2}$/.test(item.endDate) && item.endDate) ||
+      String(item?.endIso || '').slice(0, 10) ||
+      startDate;
+    const endDate = endDateRaw < startDate ? startDate : endDateRaw;
+    const autoDate = formatShortDateRangeId(startDate, endDate);
+
+    return {
+      date: autoDate || item?.date || fallback.date,
+      startDate,
+      endDate,
+      startIso: `${startDate}T00:00:00+07:00`,
+      endIso: `${endDate}T23:59:59+07:00`,
+      title: (item?.title || '').trim() || fallback.title,
+      desc: (item?.desc || '').trim() || fallback.desc,
+    };
+  });
+}
+
+export function buildSiteSchedule(config) {
+  const timeline = normalizeTimelineEvents(config?.timeline_json);
+  const rawDeadline = config?.registration_deadline || timeline[0]?.endIso || REGISTRATION_DEADLINE_ISO;
+  const deadlineIso = toWibIso(rawDeadline);
+  const deadlineParts = formatDeadlinePartsId(deadlineIso);
+  const showAnnouncementMenus =
+    config && config.show_announcement_menus !== undefined && config.show_announcement_menus !== null
+      ? Boolean(Number(config.show_announcement_menus))
+      : SHOW_ANNOUNCEMENT_MENUS;
+
+  return {
+    timeline,
+    periodBadge: formatTimelinePeriodBadge(timeline),
+    deadlineIso,
+    deadlineLabel: deadlineParts.longLabel,
+    deadlineShort: deadlineParts.shortLabel,
+    deadlineDateShort: deadlineParts.dateShort,
+    deadlineTimeShort: deadlineParts.timeShort,
+    registrationRangeLabel: timeline[0]?.date || '19 – 25 Nov 2026',
+    adminAnnouncementDate: timeline[2]?.date || '27 Nov 2026',
+    confirmationRangeLabel: timeline[3]?.date || '28 – 29 Nov 2026',
+    pantukhirDate: timeline[4]?.date || '30 Nov 2026',
+    agreementDate: timeline[5]?.date || '1 Des 2026',
+    paymentDate: timeline[6]?.date || '2 Des 2026',
+    showAnnouncementMenus,
+  };
+}
 
 export function formatRupiah(value) {
   if (!value && value !== 0) return '';

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Menu, X, ArrowRight, Megaphone } from 'lucide-react';
 import { SHOW_ANNOUNCEMENT_MENUS } from '../utils/buktyConfig';
 
-export default function Navbar() {
+export default function Navbar({ showAnnouncementMenus = SHOW_ANNOUNCEMENT_MENUS }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navLinks = [
@@ -48,7 +48,7 @@ export default function Navbar() {
         </nav>
 
         {/* Desktop Actions (shown only when announcement phase is active) */}
-        {SHOW_ANNOUNCEMENT_MENUS && (
+        {showAnnouncementMenus && (
           <div className="hidden md:flex items-center gap-2.5">
             <a
               href="#pengumuman"
@@ -94,7 +94,7 @@ export default function Navbar() {
               </a>
             ))}
           </div>
-          {SHOW_ANNOUNCEMENT_MENUS && (
+          {showAnnouncementMenus && (
             <div className="grid grid-cols-2 gap-2 pt-1">
               <a
                 href="#pengumuman"

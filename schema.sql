@@ -77,6 +77,9 @@ CREATE TABLE IF NOT EXISTS announcements (
   pantukhir_file_name TEXT,
   pantukhir_file_url TEXT,
   wa_group_pantukhir_url TEXT,
+  timeline_json TEXT,
+  registration_deadline TEXT,
+  show_announcement_menus INTEGER DEFAULT 0,
   updated_at TEXT
 );
 

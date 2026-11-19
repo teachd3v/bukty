@@ -20,12 +20,19 @@ import {
   ChevronRight,
   HeartHandshake,
   ExternalLink,
+  Calendar,
+  RotateCcw,
 } from 'lucide-react';
 import {
   calculateBuktyScores,
   checkBuktyEligibility,
   TARGET_PROVINCES,
   STATUS_YATIM_LIST,
+  SCHEDULE_EVENTS,
+  normalizeTimelineEvents,
+  formatShortDateRangeId,
+  toDatetimeLocalValue,
+  toWibIso,
 } from '../utils/buktyConfig';
 
 const SESSION_KEY = 'bukty_admin_session';
@@ -112,7 +119,10 @@ export default function AdminDashboard({ onLeaveAdmin }) {
   const [approvedSearchQuery, setApprovedSearchQuery] = useState('');
   const [approvedNameSort, setApprovedNameSort] = useState('default'); // 'default' | 'asc' | 'desc'
 
-  // Announcement & Pantukhir States
+  // Announcement, Timeline & Pantukhir States
+  const [timelineEvents, setTimelineEvents] = useState(() => SCHEDULE_EVENTS.map((item) => ({ ...item })));
+  const [registrationDeadline, setRegistrationDeadline] = useState('2026-11-25T23:59');
+  const [showAnnouncementMenus, setShowAnnouncementMenus] = useState(false);
   const [announcementTime, setAnnouncementTime] = useState('');
   const [file1, setFile1] = useState({ name: '', url: '' });
   const [file2, setFile2] = useState({ name: '', url: '' });
@@ -402,6 +412,12 @@ export default function AdminDashboard({ onLeaveAdmin }) {
         const json = await res.json();
         if (json.success && json.data) {
           const d = json.data;
+          const loadedTimeline = normalizeTimelineEvents(d.timeline_json);
+          setTimelineEvents(loadedTimeline);
+          setRegistrationDeadline(
+            toDatetimeLocalValue(d.registration_deadline || loadedTimeline[0]?.endIso || '2026-11-25T23:59')
+          );
+          setShowAnnouncementMenus(Boolean(Number(d.show_announcement_menus)));
           setAnnouncementTime(d.publish_time || '');
           setFile1({ name: d.file1_name || '', url: d.file1_url || '' });
           setFile2({ name: d.file2_name || '', url: d.file2_url || '' });
@@ -417,9 +433,46 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     }
   };
 
+  const handleTimelineFieldChange = (index, field, value) => {
+    setTimelineEvents((prev) =>
+      prev.map((item, idx) => {
+        if (idx !== index) return item;
+        const next = { ...item, [field]: value };
+        if (field === 'startDate' || field === 'endDate') {
+          const startDate = next.startDate || item.startDate;
+          let endDate = next.endDate || startDate;
+          if (field === 'startDate' && endDate < startDate) {
+            endDate = startDate;
+          } else if (field === 'endDate' && endDate < startDate) {
+            endDate = startDate;
+          }
+          next.startDate = startDate;
+          next.endDate = endDate;
+          next.startIso = `${startDate}T00:00:00+07:00`;
+          next.endIso = `${endDate}T23:59:59+07:00`;
+          next.date = formatShortDateRangeId(startDate, endDate) || item.date;
+
+          // Keep registration deadline date in sync when Stage 1 end date changes
+          if (index === 0 && (field === 'endDate' || (field === 'startDate' && endDate === startDate))) {
+            const currentTimePart = (registrationDeadline || '2026-11-25T23:59').split('T')[1] || '23:59';
+            setRegistrationDeadline(`${endDate}T${currentTimePart}`);
+          }
+        }
+        return next;
+      })
+    );
+  };
+
+  const handleResetTimelineDefaults = () => {
+    if (!window.confirm('Kembalikan seluruh 7 tahapan timeline & batas pendaftaran ke jadwal default?')) return;
+    setTimelineEvents(SCHEDULE_EVENTS.map((item) => ({ ...item })));
+    setRegistrationDeadline('2026-11-25T23:59');
+  };
+
   const handleSaveAnnouncementConfig = async () => {
     setIsSavingAnnouncement(true);
     try {
+      const normalizedTimeline = normalizeTimelineEvents(timelineEvents);
       const res = await fetch('/api/admin/announcement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -436,10 +489,20 @@ export default function AdminDashboard({ onLeaveAdmin }) {
           pantukhir_file_name: pantukhirFile.name,
           pantukhir_file_url: pantukhirFile.url,
           wa_group_pantukhir_url: waGroupPantukhirUrl,
+          timeline_json: JSON.stringify(normalizedTimeline),
+          registration_deadline: toWibIso(registrationDeadline),
+          show_announcement_menus: showAnnouncementMenus ? 1 : 0,
         }),
       });
       const json = await res.json();
-      alert(json.success ? 'Pengaturan pengumuman BUKTY berhasil disimpan!' : `Gagal menyimpan: ${json.message}`);
+      if (json.success) {
+        setTimelineEvents(normalizedTimeline);
+      }
+      alert(
+        json.success
+          ? 'Pengaturan jadwal timeline & pengumuman BUKTY berhasil disimpan! Landing page otomatis diperbarui.'
+          : `Gagal menyimpan: ${json.message}`
+      );
     } catch (err) {
       alert(`Error: ${err.message}`);
     } finally {
@@ -704,7 +767,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                 { key: 'list', label: 'Pendaftar' },
                 { key: 'leaderboard', label: 'Leaderboard' },
                 { key: 'approved', label: 'Lolos Seleksi' },
-                { key: 'announcement', label: 'Pengumuman' },
+                { key: 'announcement', label: 'Jadwal & Pengumuman' },
               ].map((t) => (
                 <button
                   key={t.key}
@@ -1471,206 +1534,380 @@ export default function AdminDashboard({ onLeaveAdmin }) {
           </div>
         )}
 
-        {/* TAB 4: PENGUMUMAN & PANTUKHIR CONFIG */}
+        {/* TAB 4: JADWAL TIMELINE, PENGUMUMAN & PANTUKHIR CONFIG */}
         {activeTab === 'announcement' && (
-          <div className="bg-white border-[3px] border-[#111827] p-6 sm:p-8 rounded-3xl shadow-[6px_6px_0px_#111827] space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#111827] pb-4">
-              <div>
-                <h3 className="font-black text-lg">Pengaturan Rilis Pengumuman & Pantukhir BUKTY</h3>
-                <p className="text-xs font-semibold text-gray-600">
-                  Atur waktu hitung mundur, unggah berkas SK PDF, dan pasang tautan Grup WhatsApp resmi.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <a href="/#bypasspengumuman" target="_blank" rel="noreferrer" className="btn-secondary py-2 px-3 text-[11px]">
-                  Preview Pengumuman
-                </a>
-                <a href="/#bypasspantukhir" target="_blank" rel="noreferrer" className="btn-secondary py-2 px-3 text-[11px]">
-                  Preview Pantukhir
-                </a>
-              </div>
-            </div>
-
-            {/* Stage 1: Administrasi */}
-            <div className="space-y-4">
-              <h4 className="font-black text-sm text-[#1D4ED8] uppercase tracking-wider">
-                1. Pengumuman Lolos Administrasi (Jadwal: 27 November 2026)
-              </h4>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-6">
+            {/* CARD A: FLEXIBLE TIMELINE, DEADLINE & LANDING PAGE VISIBILITY */}
+            <div className="bg-white border-[3px] border-[#111827] p-6 sm:p-8 rounded-3xl shadow-[6px_6px_0px_#111827] space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#111827] pb-4">
                 <div>
-                  <label className="form-label text-xs">Tanggal & Waktu Rilis (WIB)</label>
-                  <input
-                    type="datetime-local"
-                    value={announcementTime}
-                    onChange={(e) => setAnnouncementTime(e.target.value)}
-                    className="form-input text-xs font-bold font-mono-code"
-                  />
-                </div>
-                <div>
-                  <label className="form-label text-xs">Link Grup WhatsApp Tahap Konfirmasi (Opsional)</label>
-                  <input
-                    type="url"
-                    placeholder="https://chat.whatsapp.com/..."
-                    value={waGroupAdminUrl}
-                    onChange={(e) => setWaGroupAdminUrl(e.target.value)}
-                    className="form-input text-xs font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {[
-                  { key: 'file1', label: 'Dokumen 01 — SK Hasil Tahap Administrasi BUKTY', fileObj: file1 },
-                  { key: 'file2', label: 'Dokumen 02 — Panduan Tahap Konfirmasi Peserta', fileObj: file2 },
-                  { key: 'file3', label: 'Dokumen 03 — Jadwal Konfirmasi (28–29 Nov 2026)', fileObj: file3 },
-                ].map((item) => (
-                  <div
-                    key={item.key}
-                    className="bg-[#EFF6FF] border-2 border-[#111827] p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-                  >
-                    <div>
-                      <h5 className="font-black text-xs">{item.label}</h5>
-                      {item.fileObj.name ? (
-                        <a
-                          href={item.fileObj.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] font-mono-code font-bold text-[#15803D] underline"
-                        >
-                          Terunggah: {item.fileObj.name}
-                        </a>
-                      ) : (
-                        <p className="text-[10px] text-red-600 font-bold italic">Belum ada file PDF diunggah.</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <input
-                        type="file"
-                        id={`upload-ann-${item.key}`}
-                        accept="application/pdf"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) handleAnnouncementFileUpload(item.key, f);
-                          e.target.value = '';
-                        }}
-                      />
-                      <label htmlFor={`upload-ann-${item.key}`} className="btn-yellow py-2 px-4 text-xs cursor-pointer">
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>
-                          {isUploadingFile[item.key] ? 'Memproses...' : item.fileObj.name ? 'Ganti PDF' : 'Unggah PDF'}
-                        </span>
-                      </label>
-                      {item.fileObj.name && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteAnnouncementFile(item.key, item.label)}
-                          disabled={isUploadingFile[item.key]}
-                          className="inline-flex items-center gap-1.5 py-2 px-3 text-xs font-black bg-red-600 text-white border-2 border-[#111827] rounded-xl shadow-[2.5px_2.5px_0px_#111827] hover:bg-red-700 disabled:opacity-60 cursor-pointer transition-all"
-                          title="Hapus dokumen ini"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Hapus</span>
-                        </button>
-                      )}
-                    </div>
+                  <div className="inline-flex items-center gap-1.5 bg-[#FFD60A] border-2 border-[#111827] px-2.5 py-0.5 rounded-full text-[10px] font-black mb-1.5">
+                    <Calendar className="w-3 h-3" />
+                    <span>DINAMIS KE LANDING PAGE & SERVER</span>
                   </div>
-                ))}
+                  <h3 className="font-black text-lg">Pengaturan Timeline Seleksi & Batas Pendaftaran</h3>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Setiap perubahan tanggal di sini otomatis memperbarui Hero, Marquee, Timeline, FAQ, CTA, dan kunci batas pendaftaran di server.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleResetTimelineDefaults}
+                    className="btn-secondary py-2 px-3 text-[11px]"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset Default</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveAnnouncementConfig}
+                    disabled={isSavingAnnouncement}
+                    className="btn-primary py-2 px-4 text-[11px] disabled:opacity-60"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5 text-[#FFD60A]" />
+                    <span>{isSavingAnnouncement ? 'Menyimpan...' : 'Simpan Semua'}</span>
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div className="border-t-2 border-dashed border-[#111827]/20"></div>
-
-            {/* Stage 2: Pantukhir */}
-            <div className="space-y-4">
-              <h4 className="font-black text-sm text-[#1D4ED8] uppercase tracking-wider">
-                2. Pengumuman Penerima BUKTY / Pantukhir (Jadwal: 30 November 2026)
-              </h4>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="form-label text-xs">Tanggal & Waktu Rilis Pantukhir (WIB)</label>
+              {/* Quick Controls Row: Registration Deadline + Announcement Menu Visibility */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="bg-[#EFF6FF] border-2 border-[#111827] p-4 rounded-2xl space-y-2">
+                  <label className="form-label text-xs mb-0">
+                    Batas Akhir Pendaftaran (Countdown & Tutup Otomatis — WIB)
+                  </label>
                   <input
                     type="datetime-local"
-                    value={pantukhirTime}
-                    onChange={(e) => setPantukhirTime(e.target.value)}
-                    className="form-input text-xs font-bold font-mono-code"
+                    value={registrationDeadline}
+                    onChange={(e) => setRegistrationDeadline(e.target.value)}
+                    className="form-input text-xs font-bold font-mono-code bg-white"
                   />
+                  <p className="text-[11px] font-semibold text-gray-600">
+                    Otomatis ikut berubah saat Tanggal Selesai Tahap 01 (Pendaftaran) diedit, dan jam tutupnya tetap bisa diatur bebas di sini.
+                  </p>
                 </div>
-                <div>
-                  <label className="form-label text-xs">Link Grup WhatsApp Penerima BUKTY (Opsional)</label>
-                  <input
-                    type="url"
-                    placeholder="https://chat.whatsapp.com/..."
-                    value={waGroupPantukhirUrl}
-                    onChange={(e) => setWaGroupPantukhirUrl(e.target.value)}
-                    className="form-input text-xs font-bold"
-                  />
-                </div>
-              </div>
 
-              <div className="bg-[#FEF9C3]/70 border-2 border-[#111827] p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div>
-                  <h5 className="font-black text-xs">SK Penetapan Penerima Program BUKTY 2027 (PDF)</h5>
-                  {pantukhirFile.name ? (
-                    <a
-                      href={pantukhirFile.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[11px] font-mono-code font-bold text-[#15803D] underline"
-                    >
-                      Terunggah: {pantukhirFile.name}
-                    </a>
-                  ) : (
-                    <p className="text-[10px] text-red-600 font-bold italic">Belum ada file SK diunggah.</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <input
-                    type="file"
-                    id="upload-ann-pantukhir"
-                    accept="application/pdf"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleAnnouncementFileUpload('pantukhir', f);
-                      e.target.value = '';
-                    }}
-                  />
-                  <label htmlFor="upload-ann-pantukhir" className="btn-yellow py-2 px-4 text-xs cursor-pointer">
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>
-                      {isUploadingPantukhirFile ? 'Memproses...' : pantukhirFile.name ? 'Ganti SK PDF' : 'Unggah SK PDF'}
+                <div className="bg-[#FEF9C3]/70 border-2 border-[#111827] p-4 rounded-2xl flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-black text-xs text-[#111827]">
+                        Tampilkan Menu Pengumuman & Penerima di Landing Page
+                      </span>
+                      <span
+                        className={`text-[10px] font-black px-2 py-0.5 rounded-full border border-[#111827] ${
+                          showAnnouncementMenus ? 'bg-[#15803D] text-white' : 'bg-white text-gray-600'
+                        }`}
+                      >
+                        {showAnnouncementMenus ? 'AKTIF' : 'DISEMBUNYIKAN'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-semibold text-gray-600 mt-1">
+                      Nyalakan saat masa pengumuman tiba agar tombol <strong>Pengumuman</strong> & <strong>Penerima Akhir</strong> tampil di Navbar, Hero, dan Footer tanpa ubah kode.
+                    </p>
+                  </div>
+                  <label className="inline-flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={showAnnouncementMenus}
+                      onChange={(e) => setShowAnnouncementMenus(e.target.checked)}
+                      className="w-4 h-4 accent-[#1D4ED8] cursor-pointer"
+                    />
+                    <span className="text-xs font-black text-[#111827]">
+                      {showAnnouncementMenus
+                        ? 'Menu Pengumuman & Penerima Akhir sedang ditampilkan ke publik'
+                        : 'Sembunyikan dulu selama masa pendaftaran'}
                     </span>
                   </label>
-                  {pantukhirFile.name && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleDeleteAnnouncementFile('pantukhir', 'SK Penetapan Penerima Program BUKTY 2027 (PDF)')
-                      }
-                      disabled={isUploadingPantukhirFile}
-                      className="inline-flex items-center gap-1.5 py-2 px-3 text-xs font-black bg-red-600 text-white border-2 border-[#111827] rounded-xl shadow-[2.5px_2.5px_0px_#111827] hover:bg-red-700 disabled:opacity-60 cursor-pointer transition-all"
-                      title="Hapus dokumen SK ini"
+                </div>
+              </div>
+
+              {/* 7-Stage Editable Timeline List */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-black text-xs text-[#1D4ED8] uppercase tracking-wider">
+                    Daftar 7 Tahapan Timeline Seleksi BUKTY
+                  </h4>
+                  <span className="text-[11px] font-bold text-gray-500">
+                    Label tanggal otomatis diformat ke Bahasa Indonesia
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {timelineEvents.map((ev, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-[#FFFDF5] border-2 border-[#111827] rounded-2xl p-3.5 sm:p-4 shadow-[3px_3px_0px_#111827] space-y-3"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Hapus</span>
-                    </button>
-                  )}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-7 h-7 rounded-lg bg-[#1D4ED8] text-white border-2 border-[#111827] flex items-center justify-center font-mono-code font-black text-xs">
+                            0{idx + 1}
+                          </span>
+                          <span className="font-black text-xs text-[#111827]">{ev.title}</span>
+                        </div>
+                        <span className="inline-block bg-[#DBEAFE] border border-[#111827] text-[11px] font-black px-2.5 py-0.5 rounded-lg text-[#1E3A8A]">
+                          Tampil: {ev.date}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
+                        <div className="lg:col-span-2">
+                          <label className="block text-[10px] font-extrabold text-gray-500 uppercase mb-1">
+                            Tanggal Mulai
+                          </label>
+                          <input
+                            type="date"
+                            value={ev.startDate || ''}
+                            onChange={(e) => handleTimelineFieldChange(idx, 'startDate', e.target.value)}
+                            className="form-input text-xs font-bold font-mono-code py-1.5 bg-white"
+                          />
+                        </div>
+                        <div className="lg:col-span-2">
+                          <label className="block text-[10px] font-extrabold text-gray-500 uppercase mb-1">
+                            Tanggal Selesai
+                          </label>
+                          <input
+                            type="date"
+                            value={ev.endDate || ''}
+                            min={ev.startDate || undefined}
+                            onChange={(e) => handleTimelineFieldChange(idx, 'endDate', e.target.value)}
+                            className="form-input text-xs font-bold font-mono-code py-1.5 bg-white"
+                          />
+                        </div>
+                        <div className="lg:col-span-3">
+                          <label className="block text-[10px] font-extrabold text-gray-500 uppercase mb-1">
+                            Nama Tahap
+                          </label>
+                          <input
+                            type="text"
+                            value={ev.title || ''}
+                            onChange={(e) => handleTimelineFieldChange(idx, 'title', e.target.value)}
+                            className="form-input text-xs font-bold py-1.5 bg-white"
+                          />
+                        </div>
+                        <div className="lg:col-span-5">
+                          <label className="block text-[10px] font-extrabold text-gray-500 uppercase mb-1">
+                            Deskripsi Singkat
+                          </label>
+                          <input
+                            type="text"
+                            value={ev.desc || ''}
+                            onChange={(e) => handleTimelineFieldChange(idx, 'desc', e.target.value)}
+                            className="form-input text-xs font-semibold py-1.5 bg-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
-            <div className="pt-4 border-t-2 border-[#111827]/15 flex justify-end">
-              <button
-                onClick={handleSaveAnnouncementConfig}
-                disabled={isSavingAnnouncement}
-                className="btn-primary py-3 px-6 text-xs disabled:opacity-60"
-              >
-                <CheckCircle className="w-4 h-4 text-[#FFD60A]" />
-                <span>{isSavingAnnouncement ? 'Menyimpan...' : 'Simpan Pengaturan Pengumuman'}</span>
-              </button>
+            {/* CARD B: ANNOUNCEMENT & PANTUKHIR RELEASE */}
+            <div className="bg-white border-[3px] border-[#111827] p-6 sm:p-8 rounded-3xl shadow-[6px_6px_0px_#111827] space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#111827] pb-4">
+                <div>
+                  <h3 className="font-black text-lg">Pengaturan Rilis Pengumuman & Pantukhir BUKTY</h3>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Atur waktu hitung mundur rilis halaman pengumuman, unggah berkas SK PDF, dan pasang tautan Grup WhatsApp resmi.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <a href="/#bypasspengumuman" target="_blank" rel="noreferrer" className="btn-secondary py-2 px-3 text-[11px]">
+                    Preview Pengumuman
+                  </a>
+                  <a href="/#bypasspantukhir" target="_blank" rel="noreferrer" className="btn-secondary py-2 px-3 text-[11px]">
+                    Preview Pantukhir
+                  </a>
+                </div>
+              </div>
+
+              {/* Stage 1: Administrasi */}
+              <div className="space-y-4">
+                <h4 className="font-black text-sm text-[#1D4ED8] uppercase tracking-wider">
+                  1. Pengumuman Lolos Administrasi (Jadwal: {timelineEvents[2]?.date || '27 Nov 2026'})
+                </h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="form-label text-xs">Tanggal & Waktu Rilis (WIB)</label>
+                    <input
+                      type="datetime-local"
+                      value={announcementTime}
+                      onChange={(e) => setAnnouncementTime(e.target.value)}
+                      className="form-input text-xs font-bold font-mono-code"
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label text-xs">Link Grup WhatsApp Tahap Konfirmasi (Opsional)</label>
+                    <input
+                      type="url"
+                      placeholder="https://chat.whatsapp.com/..."
+                      value={waGroupAdminUrl}
+                      onChange={(e) => setWaGroupAdminUrl(e.target.value)}
+                      className="form-input text-xs font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {[
+                    { key: 'file1', label: 'Dokumen 01 — SK Hasil Tahap Administrasi BUKTY', fileObj: file1 },
+                    { key: 'file2', label: 'Dokumen 02 — Panduan Tahap Konfirmasi Peserta', fileObj: file2 },
+                    {
+                      key: 'file3',
+                      label: `Dokumen 03 — Jadwal Konfirmasi (${timelineEvents[3]?.date || '28 – 29 Nov 2026'})`,
+                      fileObj: file3,
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.key}
+                      className="bg-[#EFF6FF] border-2 border-[#111827] p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                    >
+                      <div>
+                        <h5 className="font-black text-xs">{item.label}</h5>
+                        {item.fileObj.name ? (
+                          <a
+                            href={item.fileObj.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] font-mono-code font-bold text-[#15803D] underline"
+                          >
+                            Terunggah: {item.fileObj.name}
+                          </a>
+                        ) : (
+                          <p className="text-[10px] text-red-600 font-bold italic">Belum ada file PDF diunggah.</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <input
+                          type="file"
+                          id={`upload-ann-${item.key}`}
+                          accept="application/pdf"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleAnnouncementFileUpload(item.key, f);
+                            e.target.value = '';
+                          }}
+                        />
+                        <label htmlFor={`upload-ann-${item.key}`} className="btn-yellow py-2 px-4 text-xs cursor-pointer">
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>
+                            {isUploadingFile[item.key] ? 'Memproses...' : item.fileObj.name ? 'Ganti PDF' : 'Unggah PDF'}
+                          </span>
+                        </label>
+                        {item.fileObj.name && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAnnouncementFile(item.key, item.label)}
+                            disabled={isUploadingFile[item.key]}
+                            className="inline-flex items-center gap-1.5 py-2 px-3 text-xs font-black bg-red-600 text-white border-2 border-[#111827] rounded-xl shadow-[2.5px_2.5px_0px_#111827] hover:bg-red-700 disabled:opacity-60 cursor-pointer transition-all"
+                            title="Hapus dokumen ini"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Hapus</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-t-2 border-dashed border-[#111827]/20"></div>
+
+              {/* Stage 2: Pantukhir */}
+              <div className="space-y-4">
+                <h4 className="font-black text-sm text-[#1D4ED8] uppercase tracking-wider">
+                  2. Pengumuman Penerima BUKTY / Pantukhir (Jadwal: {timelineEvents[4]?.date || '30 Nov 2026'})
+                </h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="form-label text-xs">Tanggal & Waktu Rilis Pantukhir (WIB)</label>
+                    <input
+                      type="datetime-local"
+                      value={pantukhirTime}
+                      onChange={(e) => setPantukhirTime(e.target.value)}
+                      className="form-input text-xs font-bold font-mono-code"
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label text-xs">Link Grup WhatsApp Penerima BUKTY (Opsional)</label>
+                    <input
+                      type="url"
+                      placeholder="https://chat.whatsapp.com/..."
+                      value={waGroupPantukhirUrl}
+                      onChange={(e) => setWaGroupPantukhirUrl(e.target.value)}
+                      className="form-input text-xs font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-[#FEF9C3]/70 border-2 border-[#111827] p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <h5 className="font-black text-xs">SK Penetapan Penerima Program BUKTY 2027 (PDF)</h5>
+                    {pantukhirFile.name ? (
+                      <a
+                        href={pantukhirFile.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] font-mono-code font-bold text-[#15803D] underline"
+                      >
+                        Terunggah: {pantukhirFile.name}
+                      </a>
+                    ) : (
+                      <p className="text-[10px] text-red-600 font-bold italic">Belum ada file SK diunggah.</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <input
+                      type="file"
+                      id="upload-ann-pantukhir"
+                      accept="application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleAnnouncementFileUpload('pantukhir', f);
+                        e.target.value = '';
+                      }}
+                    />
+                    <label htmlFor="upload-ann-pantukhir" className="btn-yellow py-2 px-4 text-xs cursor-pointer">
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>
+                        {isUploadingPantukhirFile ? 'Memproses...' : pantukhirFile.name ? 'Ganti SK PDF' : 'Unggah SK PDF'}
+                      </span>
+                    </label>
+                    {pantukhirFile.name && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleDeleteAnnouncementFile('pantukhir', 'SK Penetapan Penerima Program BUKTY 2027 (PDF)')
+                        }
+                        disabled={isUploadingPantukhirFile}
+                        className="inline-flex items-center gap-1.5 py-2 px-3 text-xs font-black bg-red-600 text-white border-2 border-[#111827] rounded-xl shadow-[2.5px_2.5px_0px_#111827] hover:bg-red-700 disabled:opacity-60 cursor-pointer transition-all"
+                        title="Hapus dokumen SK ini"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t-2 border-[#111827]/15 flex justify-end">
+                <button
+                  onClick={handleSaveAnnouncementConfig}
+                  disabled={isSavingAnnouncement}
+                  className="btn-primary py-3 px-6 text-xs disabled:opacity-60"
+                >
+                  <CheckCircle className="w-4 h-4 text-[#FFD60A]" />
+                  <span>{isSavingAnnouncement ? 'Menyimpan...' : 'Simpan Pengaturan Jadwal & Pengumuman'}</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
