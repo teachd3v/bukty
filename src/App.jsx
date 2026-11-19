@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import Navbar from './components/Navbar';
 import HeroSection from './components/HeroSection';
 import ProgramOverviewSection from './components/ProgramOverviewSection';
@@ -6,13 +6,25 @@ import RequirementsSection from './components/RequirementsSection';
 import TimelineSection from './components/TimelineSection';
 import FaqSection from './components/FaqSection';
 import Footer from './components/Footer';
-import RegistrationFormModal from './components/RegistrationFormModal';
-import AdminDashboard from './components/AdminDashboard';
 import CtaSection from './components/CtaSection';
-import PengumumanPage from './components/PengumumanPage';
-import PantukhirPage from './components/PantukhirPage';
 import { Sparkles } from 'lucide-react';
 import { buildSiteSchedule } from './utils/buktyConfig';
+
+const RegistrationFormModal = lazy(() => import('./components/RegistrationFormModal'));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
+const PengumumanPage = lazy(() => import('./components/PengumumanPage'));
+const PantukhirPage = lazy(() => import('./components/PantukhirPage'));
+
+function RouteLoader() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center bg-[#FFFDF5] text-[#111827]">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-10 h-10 border-4 border-[#111827] border-t-[#FFD60A] rounded-full animate-spin"></div>
+        <span className="font-extrabold text-xs">Memuat halaman BUKTY...</span>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -102,17 +114,19 @@ export default function App() {
 
   if (isAdminRoute) {
     return (
-      <AdminDashboard
-        onLeaveAdmin={() => {
-          setIsAdminRoute(false);
-          fetchSiteSchedule();
-          if (window.location.pathname !== '/') {
-            window.history.replaceState(null, '', '/');
-          } else {
-            window.location.hash = '';
-          }
-        }}
-      />
+      <Suspense fallback={<RouteLoader />}>
+        <AdminDashboard
+          onLeaveAdmin={() => {
+            setIsAdminRoute(false);
+            fetchSiteSchedule();
+            if (window.location.pathname !== '/') {
+              window.history.replaceState(null, '', '/');
+            } else {
+              window.location.hash = '';
+            }
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -121,10 +135,16 @@ export default function App() {
       <div className="min-h-screen flex flex-col relative selection:bg-[#FFD60A] selection:text-[#111827] bg-[#FFFDF5]">
         <Navbar showAnnouncementMenus={siteSchedule.showAnnouncementMenus} />
         <main className="flex-grow">
-          <PengumumanPage />
+          <Suspense fallback={<RouteLoader />}>
+            <PengumumanPage />
+          </Suspense>
         </main>
         <Footer showAnnouncementMenus={siteSchedule.showAnnouncementMenus} />
-        <RegistrationFormModal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} />
+        {isFormOpen && (
+          <Suspense fallback={null}>
+            <RegistrationFormModal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} />
+          </Suspense>
+        )}
       </div>
     );
   }
@@ -134,10 +154,16 @@ export default function App() {
       <div className="min-h-screen flex flex-col relative selection:bg-[#FFD60A] selection:text-[#111827] bg-[#FFFDF5]">
         <Navbar showAnnouncementMenus={siteSchedule.showAnnouncementMenus} />
         <main className="flex-grow">
-          <PantukhirPage />
+          <Suspense fallback={<RouteLoader />}>
+            <PantukhirPage />
+          </Suspense>
         </main>
         <Footer showAnnouncementMenus={siteSchedule.showAnnouncementMenus} />
-        <RegistrationFormModal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} />
+        {isFormOpen && (
+          <Suspense fallback={null}>
+            <RegistrationFormModal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} />
+          </Suspense>
+        )}
       </div>
     );
   }
@@ -175,7 +201,11 @@ export default function App() {
 
       <Footer showAnnouncementMenus={siteSchedule.showAnnouncementMenus} />
 
-      <RegistrationFormModal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} />
+      {isFormOpen && (
+        <Suspense fallback={null}>
+          <RegistrationFormModal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

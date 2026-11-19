@@ -52,6 +52,10 @@ export default function HeroSection({ onOpenForm, isClosed, schedule }) {
               <img
                 src="/bukty-hero.jpg"
                 alt="Ilustrasi Program Bantuan UKT Yatim BUKTY"
+                width="900"
+                height="900"
+                fetchPriority="high"
+                decoding="async"
                 className="w-full aspect-square object-cover rounded-xl sm:rounded-2xl border-2 border-[#111827]"
               />
 

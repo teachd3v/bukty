@@ -18,8 +18,6 @@ import {
   Search,
   Building2,
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
-import html2pdf from 'html2pdf.js';
 import {
   AGAMA_LIST,
   PROVINSI_LIST,
@@ -434,6 +432,7 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
     localStorage.removeItem(DRAFT_STORAGE_KEY);
 
     try {
+      const { default: confetti } = await import('canvas-confetti');
       confetti({
         particleCount: 120,
         spread: 75,
@@ -452,6 +451,7 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
     setPdfError(null);
 
     try {
+      const { default: html2pdf } = await import('html2pdf.js');
       const opt = {
         margin: [8, 8, 8, 8],
         filename: `Bukti_Pendaftaran_BUKTY_${submittedData.regId}.pdf`,
