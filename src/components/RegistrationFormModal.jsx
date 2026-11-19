@@ -1259,7 +1259,7 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
 
                   <div>
                     <label className="form-label">
-                      {isMaba ? 'Rata-rata Nilai Rapor *' : 'IPK Terakhir (Min. 3,00) *'}
+                      {isMaba ? 'Rata-rata Nilai Rapor *' : 'IPK Terakhir (Min. 3.00) *'}
                     </label>
                     <input
                       type="number"

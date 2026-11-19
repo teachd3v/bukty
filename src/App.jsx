@@ -42,26 +42,29 @@ export default function App() {
 
   useEffect(() => {
     const checkRoute = () => {
-      if (window.location.hash === '#admin' || window.location.pathname.includes('/admin')) {
-        setIsAdminRoute(true);
-        setIsPengumumanRoute(false);
-        setIsPantukhirRoute(false);
-      } else if (
-        window.location.hash === '#pengumuman' ||
-        window.location.hash === '#bypasspengumuman' ||
-        window.location.pathname.includes('/pengumuman')
+      const hash = window.location.hash;
+      const pathname = window.location.pathname;
+
+      if (
+        hash === '#pengumuman' ||
+        hash === '#bypasspengumuman' ||
+        (pathname.includes('/pengumuman') && hash !== '#admin' && hash !== '#pantukhir' && hash !== '#bypasspantukhir')
       ) {
         setIsAdminRoute(false);
         setIsPengumumanRoute(true);
         setIsPantukhirRoute(false);
       } else if (
-        window.location.hash === '#pantukhir' ||
-        window.location.hash === '#bypasspantukhir' ||
-        window.location.pathname.includes('/pantukhir')
+        hash === '#pantukhir' ||
+        hash === '#bypasspantukhir' ||
+        (pathname.includes('/pantukhir') && hash !== '#admin')
       ) {
         setIsAdminRoute(false);
         setIsPengumumanRoute(false);
         setIsPantukhirRoute(true);
+      } else if (hash === '#admin' || pathname.includes('/admin')) {
+        setIsAdminRoute(true);
+        setIsPengumumanRoute(false);
+        setIsPantukhirRoute(false);
       } else {
         setIsAdminRoute(false);
         setIsPengumumanRoute(false);
@@ -83,7 +86,11 @@ export default function App() {
       <AdminDashboard
         onLeaveAdmin={() => {
           setIsAdminRoute(false);
-          window.location.hash = '';
+          if (window.location.pathname !== '/') {
+            window.history.replaceState(null, '', '/');
+          } else {
+            window.location.hash = '';
+          }
         }}
       />
     );

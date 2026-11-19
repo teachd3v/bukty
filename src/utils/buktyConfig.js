@@ -144,7 +144,7 @@ export function checkBuktyEligibility(r) {
 
   const isMaba = (r.status_mahasiswa || '') === 'Mahasiswa Baru';
   const ipkVal = parseFloat(String(r.ipk || '').replace(',', '.')) || 0;
-  if (!isMaba && ipkVal < 3.0) flags.push('IPK di bawah 3,00');
+  if (!isMaba && ipkVal < 3.0) flags.push('IPK di bawah 3.00');
 
   const otherSch = (r.sedang_beasiswa_lain || '').trim().toLowerCase();
   if (otherSch === 'ya' || otherSch === 'pernah') {

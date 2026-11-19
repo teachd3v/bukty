@@ -6,7 +6,7 @@ export default function PantukhirPage() {
   const [config, setConfig] = useState(null);
   const [recipients, setRecipients] = useState([]);
   const [timeLeft, setTimeLeft] = useState(null);
-  const [isReleased, setIsReleased] = useState(false);
+  const [isReleased, setIsReleased] = useState(() => window.location.hash === '#bypasspantukhir');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewFile, setPreviewFile] = useState(null);
 
@@ -98,7 +98,7 @@ export default function PantukhirPage() {
       <div className="max-w-4xl w-full space-y-8">
         <div>
           <a
-            href="#"
+            href="/"
             className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-black bg-white border-2 border-[#111827] rounded-xl hover:bg-[#EFF6FF] shadow-[2.5px_2.5px_0px_#111827] transition-all"
           >
             <ArrowLeft className="w-3.5 h-3.5" />

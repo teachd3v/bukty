@@ -4,7 +4,7 @@ export async function onRequestPost({ request, env }) {
     const { password } = await request.json();
     const ADMIN_PASS = (env && env.ADMIN_PASSWORD) ? env.ADMIN_PASSWORD : 'admin2026';
 
-    if (password === ADMIN_PASS || password === 'admin2026') {
+    if (password === ADMIN_PASS) {
       const token = 'token_bukty_admin_' + Date.now();
       return new Response(
         JSON.stringify({ success: true, token, message: 'Autentikasi berhasil' }),

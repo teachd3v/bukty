@@ -12,7 +12,7 @@ export default function RequirementsSection() {
     'Kuliah di Perguruan Tinggi Negeri (PTN).',
     'Berada di salah satu dari 12 provinsi wilayah program.',
     'Diutamakan Anak Yatim (Yatim / Piatu / Yatim Piatu).',
-    'IPK min. 3,00 (skala 4,00) atau melampirkan rapor terakhir bagi Maba.',
+    'IPK min. 3.00 (skala 4.00) atau melampirkan rapor terakhir bagi Maba.',
     'Tidak sedang menerima beasiswa lain atau ikatan dinas.',
     'Memiliki pengalaman aktivitas sosial yang berdampak bagi masyarakat.',
     'Esai 1.000–1.500 kata (TNR 12, spasi 1,5) soal kondisi keluarga & kelayakan.',

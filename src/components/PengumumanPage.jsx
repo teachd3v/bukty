@@ -5,7 +5,7 @@ export default function PengumumanPage() {
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null);
-  const [isReleased, setIsReleased] = useState(false);
+  const [isReleased, setIsReleased] = useState(() => window.location.hash === '#bypasspengumuman');
   const [previewFile, setPreviewFile] = useState(null);
 
   useEffect(() => {
@@ -78,7 +78,7 @@ export default function PengumumanPage() {
       <div className="max-w-3xl w-full space-y-8">
         <div>
           <a
-            href="#"
+            href="/"
             className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-black bg-white border-2 border-[#111827] rounded-xl hover:bg-[#EFF6FF] shadow-[2.5px_2.5px_0px_#111827] transition-all"
           >
             <ArrowLeft className="w-3.5 h-3.5" />

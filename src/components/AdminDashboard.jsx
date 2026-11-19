@@ -496,16 +496,10 @@ export default function AdminDashboard({ onLeaveAdmin }) {
         localStorage.setItem(SESSION_KEY, JSON.stringify({ token: json.token, timestamp: Date.now() }));
         return;
       }
+      setLoginError('Kata sandi admin salah. Silakan coba kembali.');
     } catch (err) {
-      // Fallback for offline/vite-dev preview
-      if (passwordInput === 'admin2026' || passwordInput === 'admin') {
-        setIsAuthenticated(true);
-        setLoginError('');
-        localStorage.setItem(SESSION_KEY, JSON.stringify({ token: 'local_' + Date.now(), timestamp: Date.now() }));
-        return;
-      }
+      setLoginError('Gagal terhubung ke server autentikasi. Silakan coba lagi.');
     }
-    setLoginError('Kata sandi admin salah! (Default: admin2026)');
   };
 
   const handleLogout = () => {
@@ -1446,10 +1440,10 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <a href="#bypasspengumuman" target="_blank" rel="noreferrer" className="btn-secondary py-2 px-3 text-[11px]">
+                <a href="/#bypasspengumuman" target="_blank" rel="noreferrer" className="btn-secondary py-2 px-3 text-[11px]">
                   Preview Pengumuman
                 </a>
-                <a href="#bypasspantukhir" target="_blank" rel="noreferrer" className="btn-secondary py-2 px-3 text-[11px]">
+                <a href="/#bypasspantukhir" target="_blank" rel="noreferrer" className="btn-secondary py-2 px-3 text-[11px]">
                   Preview Pantukhir
                 </a>
               </div>
