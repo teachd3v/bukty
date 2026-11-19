@@ -83,7 +83,7 @@ export default function HeroSection({ onOpenForm, isClosed }) {
                 </span>
               </h1>
               <p className="text-sm sm:text-base font-semibold text-gray-700 leading-relaxed max-w-2xl">
-                Dukungan biaya kuliah dari <strong className="text-[#1D4ED8] font-extrabold">Dompet Dhuafa & GREAT Edunesia</strong> bagi mahasiswa aktif S1/D4 Perguruan Tinggi Negeri — dengan prioritas utama anak yatim.
+                Dukungan biaya UKT selama <strong className="text-[#1D4ED8] font-extrabold">1 tahun (Ganjil & Genap 2027)</strong>
               </p>
             </div>
 
@@ -104,8 +104,8 @@ export default function HeroSection({ onOpenForm, isClosed }) {
                   <GraduationCap className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-[10px] font-bold text-gray-500">Durasi Periode 2027</div>
-                  <div className="font-black text-xs text-[#111827]">2 Semester (1 Thn)</div>
+                  <div className="text-[10px] font-bold text-gray-500">Mahasiswa Aktif</div>
+                  <div className="font-black text-xs text-[#111827]">D4 & S1 PTN*</div>
                 </div>
               </div>
 
@@ -114,8 +114,8 @@ export default function HeroSection({ onOpenForm, isClosed }) {
                   <MapPin className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-[10px] font-bold text-gray-500">Cakupan Kampus</div>
-                  <div className="font-black text-xs text-[#111827]">PTN • 12 Provinsi</div>
+                  <div className="text-[10px] font-bold text-gray-500">Cakupan Wilayah</div>
+                  <div className="font-black text-xs text-[#111827]">12 Provinsi</div>
                 </div>
               </div>
             </div>
