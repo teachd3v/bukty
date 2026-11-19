@@ -56,23 +56,13 @@ export default function Navbar({ onOpenForm, isClosed }) {
             <span>Pengumuman</span>
           </a>
 
-          {isClosed ? (
-            <a
-              href="#pantukhir"
-              className="px-4 py-2 bg-[#1D4ED8] hover:bg-[#1E3A8A] text-white border-2 border-[#111827] rounded-xl text-xs font-black shadow-[2px_2px_0px_#111827] transition-all inline-flex items-center gap-1.5"
-            >
-              <span>Cek Penerima</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </a>
-          ) : (
-            <button
-              onClick={onOpenForm}
-              className="px-4 py-2 bg-[#FFD60A] hover:bg-[#EAB308] text-[#111827] border-2 border-[#111827] rounded-xl text-xs font-black shadow-[2px_2px_0px_#111827] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_#111827] transition-all inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <span>Daftar Sekarang</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          )}
+          <a
+            href="#pantukhir"
+            className="px-3.5 py-2 bg-[#1D4ED8] hover:bg-[#1E3A8A] text-white border-2 border-[#111827] rounded-xl text-xs font-black shadow-[2px_2px_0px_#111827] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_#111827] transition-all inline-flex items-center gap-1.5"
+          >
+            <span>Penerima</span>
+            <ArrowRight className="w-3.5 h-3.5 text-[#FFD60A]" />
+          </a>
         </div>
 
         {/* Mobile Hamburger */}
@@ -109,25 +99,13 @@ export default function Navbar({ onOpenForm, isClosed }) {
             >
               Pengumuman
             </a>
-            {isClosed ? (
-              <a
-                href="#pantukhir"
-                onClick={() => setMobileMenuOpen(false)}
-                className="py-2.5 px-3 bg-[#1D4ED8] text-white border-2 border-[#111827] rounded-xl text-xs font-black text-center shadow-[2px_2px_0px_#111827]"
-              >
-                Cek Penerima
-              </a>
-            ) : (
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  onOpenForm();
-                }}
-                className="py-2.5 px-3 bg-[#FFD60A] text-[#111827] border-2 border-[#111827] rounded-xl text-xs font-black text-center shadow-[2px_2px_0px_#111827]"
-              >
-                Daftar Sekarang
-              </button>
-            )}
+            <a
+              href="#pantukhir"
+              onClick={() => setMobileMenuOpen(false)}
+              className="py-2.5 px-3 bg-[#1D4ED8] text-white border-2 border-[#111827] rounded-xl text-xs font-black text-center shadow-[2px_2px_0px_#111827]"
+            >
+              Penerima
+            </a>
           </div>
         </div>
       )}

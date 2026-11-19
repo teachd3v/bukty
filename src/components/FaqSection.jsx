@@ -6,32 +6,24 @@ export default function FaqSection() {
 
   const faqs = [
     {
-      q: 'Berapa besaran dan durasi bantuan UKT yang diterima?',
-      a: 'Penerima BUKTY berhak memperoleh Bantuan UKT selama 1 tahun untuk 2 (dua) semester (Ganjil dan Genap periode 2027), dengan nominal maksimal Rp3.000.000,00 per semester.',
-    },
-    {
-      q: 'Siapa saja yang berhak mendaftar Program BUKTY?',
-      a: 'Mahasiswa aktif S1 atau D4 beragama Islam di Perguruan Tinggi Negeri (PTN) yang berada pada 12 provinsi wilayah program, memiliki IPK minimal 3,00 (atau rapor terakhir bagi mahasiswa baru), tidak sedang menerima beasiswa lain/ikatan dinas, dan diutamakan Anak Yatim.',
-    },
-    {
-      q: 'Provinsi mana saja yang masuk wilayah program BUKTY?',
-      a: '12 provinsi cakupan program meliputi Jawa Timur, Jawa Barat, DI Yogyakarta, Sumatera Barat, Sumatera Utara, DKI Jakarta, Banten, Sumatera Selatan, Sulawesi Selatan, Riau, Lampung, dan Jawa Tengah.',
-    },
-    {
-      q: 'Bagaimana ketentuan penulisan Esai pendaftaran?',
-      a: 'Esai ditulis sepanjang 1.000–1.500 kata menggunakan font Times New Roman ukuran 12, spasi 1,5. Isi esai menggambarkan kondisi keluarga saat ini serta alasan kelayakan Anda menerima Bantuan UKT Yatim (BUKTY).',
-    },
-    {
       q: 'Bagaimana jika nominal UKT saya melebihi Rp3.000.000 per semester?',
-      a: 'Bantuan UKT diberikan maksimal Rp3.000.000,00 per semester. Apabila tagihan UKT kampus melebihi plafon tersebut, selisihnya dapat ditanggung secara mandiri oleh mahasiswa.',
+      a: 'Plafon bantuan maksimal Rp3.000.000 per semester. Jika tagihan UKT kampus lebih besar dari batas tersebut, selisihnya dapat ditanggung mandiri oleh mahasiswa.',
     },
     {
-      q: 'Apakah mahasiswa baru (semester 1) bisa mendaftar tanpa KHS dan IPK?',
-      a: 'Bisa. Pilih status "Mahasiswa Baru" pada formulir pendaftaran; kolom IPK akan menyesuaikan menjadi rata-rata nilai rapor terakhir, NIM bersifat opsional, dan dokumen KHS/KTM dapat diganti dengan rapor terakhir serta kartu pelajar.',
+      q: 'Apakah mahasiswa baru (semester 1) tanpa IPK, KHS, atau KTM tetap bisa mendaftar?',
+      a: 'Bisa. Pilih status "Mahasiswa Baru" di formulir; kolom IPK akan berganti menjadi rata-rata nilai rapor terakhir, NIM bersifat opsional, dan dokumen KHS/KTM cukup diganti rapor terakhir serta kartu pelajar.',
     },
     {
-      q: 'Apakah ada biaya pendaftaran dan kapan pengumuman penerima dirilis?',
-      a: 'Pendaftaran 100% GRATIS tanpa biaya apa pun. Pengumuman Lolos Administrasi dirilis pada 27 November 2026 dan Pengumuman Penerima Bantuan UKT dirilis pada 30 November 2026 melalui portal ini dan kanal resmi Dompet Dhuafa & GREAT Edunesia.',
+      q: 'Apakah mahasiswa non-yatim (orang tua lengkap namun dhuafa) diperbolehkan mendaftar?',
+      a: 'Boleh. Program ini memprioritaskan anak yatim/piatu/yatim piatu dalam pembobotan seleksi, namun mahasiswa dhuafa dari keluarga lengkap yang memenuhi seluruh kriteria tetap dapat mengajukan pendaftaran.',
+    },
+    {
+      q: 'Apakah mahasiswa kampus swasta (PTS) atau di luar 12 provinsi bisa mendaftar?',
+      a: 'Belum bisa. Sesuai ketentuan periode ini, BUKTY hanya diperuntukkan bagi mahasiswa aktif S1/D4 Perguruan Tinggi Negeri (PTN) yang berlokasi di 12 provinsi wilayah program.',
+    },
+    {
+      q: 'Apakah pengisian formulir bisa disimpan sementara dan di mana pengumuman seleksi dicek?',
+      a: 'Formulir otomatis menyimpan draft di browser Anda selama belum dikirim. Hasil Lolos Administrasi (27 Nov 2026) dan Penerima Akhir (30 Nov 2026) dapat dicek langsung melalui tombol Pengumuman & Penerima di portal ini.',
     },
   ];
 

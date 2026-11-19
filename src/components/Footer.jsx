@@ -13,7 +13,7 @@ export default function Footer() {
               <span>BUKTY — BANTUAN UKT YATIM</span>
             </div>
             <p className="text-sm text-slate-300 font-normal leading-relaxed max-w-md">
-              Program Bantuan UKT Yatim (BUKTY) dari Dompet Dhuafa & GREAT Edunesia untuk mahasiswa aktif S1 & D4 Perguruan Tinggi Negeri di 12 provinsi wilayah program. Mendukung keberlanjutan kuliah selama 2 semester periode 2027.
+              Inisiatif pendidikan Dompet Dhuafa & GREAT Edunesia untuk membantu keberlanjutan kuliah mahasiswa PTN di Indonesia.
             </p>
 
             {/* Social Handles */}

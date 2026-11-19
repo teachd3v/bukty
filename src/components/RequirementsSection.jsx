@@ -1,37 +1,37 @@
 import React, { useState } from 'react';
-import { CheckSquare, Square, FileText, Info, ArrowRight } from 'lucide-react';
+import { CheckSquare, Square, FileText, ArrowDown } from 'lucide-react';
 
-export default function RequirementsSection({ onOpenForm, isClosed }) {
+export default function RequirementsSection() {
   const [checkedDocs, setCheckedDocs] = useState({});
 
-  // All 11 official requirements from DRAFT_PROGRAM_BUKTY.docx
+  // All 11 official requirements from DRAFT_PROGRAM_BUKTY.docx (concise, non-redundant)
   const requirements = [
     'Beragama Islam.',
     'Mahasiswa aktif Program Sarjana (S1) atau Diploma 4 (D4).',
-    'Termasuk kampus di Perguruan Tinggi Negeri (PTN).',
-    'Berada di 12 wilayah program: Jawa Timur, Jawa Barat, DI Yogyakarta, Sumatera Barat, Sumatera Utara, DKI Jakarta, Banten, Sumatera Selatan, Sulawesi Selatan, Riau, Lampung, dan Jawa Tengah.',
+    'Berada di Perguruan Tinggi Negeri (PTN).',
+    'Berlokasi di salah satu dari 12 provinsi wilayah program (lihat daftar di atas).',
     'Diutamakan Anak Yatim (Yatim / Piatu / Yatim Piatu).',
     'IPK terakhir minimal 3,00 (skala 4,00) atau melampirkan rapor terakhir bagi mahasiswa baru.',
-    'Tidak sedang menerima beasiswa lain dan/atau berada dalam status ikatan dinas dari lembaga/instansi lain.',
-    'Memiliki pengalaman menjalankan aktivitas sosial yang memberikan dampak kebermanfaatan bagi masyarakat.',
-    'Membuat esai sepanjang 1.000–1.500 kata (Times New Roman 12, spasi 1,5) yang menggambarkan kondisi keluarga saat ini dan alasan kelayakan menerima beasiswa.',
-    'Bersedia dilibatkan sewaktu-waktu dalam program sosial dan pemberdayaan masyarakat yang diselenggarakan Dompet Dhuafa.',
-    'Bersedia untuk dipublikasikan sebagai penerima Bantuan UKT Yatim (BUKTY) di media sosial Dompet Dhuafa dan jejaringnya.',
+    'Tidak sedang menerima beasiswa lain atau berada dalam ikatan dinas lembaga/instansi lain.',
+    'Memiliki pengalaman aktivitas sosial yang berdampak bagi masyarakat.',
+    'Menulis esai 1.000–1.500 kata (Times New Roman 12, spasi 1,5) tentang kondisi keluarga dan alasan kelayakan menerima BUKTY.',
+    'Bersedia dilibatkan sewaktu-waktu dalam program sosial dan pemberdayaan masyarakat Dompet Dhuafa.',
+    'Bersedia dipublikasikan sebagai penerima BUKTY di media sosial Dompet Dhuafa dan jejaringnya.',
   ];
 
   // All 13 documents matching DRAFT_PROGRAM_BUKTY.docx Bagian E
   const documents = [
     { id: 'bio', name: 'Biodata Diri (CV / Resume)' },
-    { id: 'krs', name: 'Surat Keterangan Aktif Kuliah atau Bukti KRS' },
+    { id: 'krs', name: 'Surat Keterangan Aktif Kuliah / Bukti KRS' },
     { id: 'rumah_depan', name: 'Foto Rumah (Tampak Depan)' },
     { id: 'rumah_tamu', name: 'Foto Rumah (Ruang Tamu)' },
     { id: 'rumah_samping', name: 'Foto Rumah (Tampak Samping)' },
-    { id: 'khs', name: 'Scan KHS Terakhir atau Rapor Terakhir (Mahasiswa Baru)' },
+    { id: 'khs', name: 'Scan KHS Terakhir / Rapor Terakhir (Maba)' },
     { id: 'ktp', name: 'Scan KTP' },
     { id: 'ktm', name: 'Scan KTM (atau Kartu Pelajar untuk Maba)' },
-    { id: 'sktm', name: 'Surat Keterangan Tidak Mampu (SKTM) dari Kelurahan/Desa' },
+    { id: 'sktm', name: 'SKTM dari Kelurahan/Desa' },
     { id: 'kk', name: 'Scan Kartu Keluarga (KK)' },
-    { id: 'prestasi', name: 'Dokumen Pendukung Prestasi (Opsional / Jika Ada)' },
+    { id: 'prestasi', name: 'Dokumen Prestasi (Opsional)' },
     { id: 'esai', name: 'Esai (1.000–1.500 kata, TNR 12, spasi 1,5)' },
     { id: 'ukt', name: 'Bukti Tagihan / Slip UKT dari Kampus' },
   ];
@@ -56,7 +56,7 @@ export default function RequirementsSection({ onOpenForm, isClosed }) {
             Persyaratan & Checklist 13 Berkas
           </h2>
           <p className="text-sm sm:text-base text-gray-700 font-semibold leading-relaxed">
-            Pastikan Anda memenuhi seluruh kriteria dan menyiapkan 13 dokumen di bawah ini sebelum mengisi formulir pendaftaran.
+            Pastikan Anda memenuhi 11 kriteria berikut dan tandai berkas yang sudah siap sebelum mendaftar.
           </p>
         </div>
 
@@ -71,7 +71,7 @@ export default function RequirementsSection({ onOpenForm, isClosed }) {
               </span>
             </div>
 
-            <div className="space-y-2.5 max-h-[540px] overflow-y-auto pr-1">
+            <div className="space-y-2.5 max-h-[580px] overflow-y-auto pr-1">
               {requirements.map((req, idx) => (
                 <div
                   key={idx}
@@ -83,13 +83,6 @@ export default function RequirementsSection({ onOpenForm, isClosed }) {
                   <p className="text-xs font-bold text-[#111827] leading-relaxed">{req}</p>
                 </div>
               ))}
-            </div>
-
-            <div className="bg-[#FEF9C3] border-2 border-[#111827] p-4 rounded-2xl flex items-start gap-3 text-xs font-bold text-[#111827]">
-              <Info className="w-4 h-4 text-[#1D4ED8] shrink-0 mt-0.5" />
-              <span>
-                <strong>Ketentuan Esai:</strong> Panjang 1.000–1.500 kata, font Times New Roman 12, spasi 1,5. Menggambarkan kondisi keluarga saat ini & alasan kelayakan menerima BUKTY.
-              </span>
             </div>
           </div>
 
@@ -151,23 +144,17 @@ export default function RequirementsSection({ onOpenForm, isClosed }) {
               })}
             </div>
 
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t-2 border-dashed border-gray-200">
+            <div className="pt-3 flex flex-col sm:flex-row items-center justify-between gap-3 border-t-2 border-dashed border-gray-200">
               <p className="text-[11px] font-bold text-gray-600">
-                Format berkas yang diterima: <strong className="text-[#111827]">PDF / JPG / PNG</strong> (maks. 5 MB/file).
+                Format berkas: <strong className="text-[#111827]">PDF / JPG / PNG</strong> (maks. 5 MB/file).
               </p>
-              {isClosed ? (
-                <button
-                  disabled
-                  className="bg-gray-200 text-gray-500 border-2 border-gray-400 rounded-xl py-3 px-7 w-full sm:w-auto font-black text-xs cursor-not-allowed"
-                >
-                  Pendaftaran Ditutup
-                </button>
-              ) : (
-                <button onClick={onOpenForm} className="btn-yellow text-xs py-3 px-7 w-full sm:w-auto">
-                  <span>Mulai Isi Formulir BUKTY</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              )}
+              <a
+                href="#jadwal"
+                className="inline-flex items-center gap-1.5 text-xs font-black text-[#1D4ED8] hover:text-[#1E3A8A] bg-[#EFF6FF] border-2 border-[#111827] px-4 py-2 rounded-xl shadow-[2px_2px_0px_#111827] transition-all"
+              >
+                <span>Lanjut Cek Jadwal & FAQ</span>
+                <ArrowDown className="w-3.5 h-3.5" />
+              </a>
             </div>
           </div>
         </div>

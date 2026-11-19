@@ -3,14 +3,14 @@ import { ArrowRight, Sparkles, ShieldCheck, Calendar } from 'lucide-react';
 
 export default function CtaSection({ onOpenForm, isClosed }) {
   return (
-    <section className="py-16 md:py-22 bg-[#EFF6FF] border-t-[3px] border-[#111827] relative overflow-hidden">
+    <section id="daftar" className="py-16 md:py-22 bg-[#EFF6FF] border-t-[3px] border-[#111827] relative overflow-hidden">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
         <div className="bg-[#1D4ED8] text-white border-[3px] border-[#111827] p-8 md:p-12 rounded-3xl shadow-[8px_8px_0px_#111827] space-y-6">
           {/* Eyebrow Tag */}
           <div className="inline-flex items-center gap-2 bg-[#FFD60A] text-[#111827] border-2 border-[#111827] px-4 py-1 rounded-full text-xs font-black shadow-[2.5px_2.5px_0px_#111827] mx-auto">
             <Sparkles className="w-3.5 h-3.5" />
             <span className="tracking-wider uppercase text-[10px]">
-              {isClosed ? 'Pendaftaran Selesai' : 'Jangan Lewatkan Kesempatan Ini'}
+              {isClosed ? 'Pendaftaran Selesai' : 'Langkah Terakhir'}
             </span>
           </div>
 
@@ -22,7 +22,7 @@ export default function CtaSection({ onOpenForm, isClosed }) {
               </>
             ) : (
               <>
-                Siap Mengajukan Bantuan UKT <span className="text-[#FFD60A] underline decoration-white decoration-4 underline-offset-4">2 Semester Penuh</span>?
+                Sudah Baca Semua Ketentuan & <span className="text-[#FFD60A] underline decoration-white decoration-4 underline-offset-4">Siap Mendaftar</span>?
               </>
             )}
           </h2>
@@ -30,8 +30,8 @@ export default function CtaSection({ onOpenForm, isClosed }) {
           {/* Description */}
           <p className="text-sm sm:text-base text-blue-100 font-semibold max-w-xl mx-auto leading-relaxed">
             {isClosed
-              ? 'Batas waktu pendaftaran Program Bantuan UKT Yatim (BUKTY) telah berakhir pada 25 November 2026 pukul 23:59 WIB. Pantau hasil seleksi pada halaman Pengumuman & Penerima Akhir.'
-              : 'Jika Anda sudah memenuhi kriteria dan menyiapkan 13 dokumen persyaratan, segera kirimkan pendaftaran Anda sebelum batas akhir 25 November 2026 pukul 23:59 WIB.'}
+              ? 'Pendaftaran telah berakhir pada 25 November 2026 pukul 23:59 WIB. Pantau hasil seleksi pada halaman Pengumuman & Penerima.'
+              : 'Pastikan 13 dokumen telah siap sebelum menekan tombol di bawah. Formulir ditutup pada 25 November 2026 pukul 23:59 WIB.'}
           </p>
 
           {/* CTA Action */}

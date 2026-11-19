@@ -53,7 +53,6 @@ export default function TimelineSection() {
                   >
                     {isFinished ? <CheckCircle2 className="w-4 h-4" /> : `0${index + 1}`}
                   </div>
-                  <span className="text-[10px] font-mono-code font-black text-gray-400">#{index + 1}</span>
                 </div>
 
                 <div className="space-y-2 mb-4">
@@ -85,11 +84,6 @@ export default function TimelineSection() {
               </div>
             );
           })}
-        </div>
-
-        {/* Notice Strip */}
-        <div className="max-w-xl mx-auto bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] text-center text-xs font-extrabold text-[#111827]">
-          Seluruh tahapan pendaftaran dan seleksi Program BUKTY bersifat <span className="text-[#1D4ED8] underline decoration-[#FFD60A] decoration-3">100% GRATIS</span> tanpa dipungut biaya apa pun.
         </div>
       </div>
     </section>

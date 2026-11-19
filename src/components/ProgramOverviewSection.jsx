@@ -40,7 +40,7 @@ export default function ProgramOverviewSection() {
             Dukungan UKT Berkelanjutan untuk Mahasiswa PTN
           </h2>
           <p className="text-sm sm:text-base text-gray-700 font-semibold leading-relaxed">
-            Setiap mahasiswa yang memenuhi seluruh persyaratan dan lolos proses seleksi berhak memperoleh Bantuan UKT selama 1 tahun untuk 2 (dua) semester ganjil dan genap periode 2027, maksimal Rp3.000.000,00 per semester.
+            Hadir untuk menjaga keberlanjutan kuliah mahasiswa berprestasi yang terkendala biaya pendidikan.
           </p>
         </div>
 
@@ -82,12 +82,12 @@ export default function ProgramOverviewSection() {
               <div>
                 <h3 className="font-black text-lg sm:text-xl text-[#111827]">12 Provinsi Wilayah Program BUKTY</h3>
                 <p className="text-xs font-semibold text-gray-600">
-                  Berlaku bagi mahasiswa Perguruan Tinggi Negeri (PTN) yang berada pada wilayah cakupan berikut:
+                  Berlaku untuk kampus PTN yang berlokasi di provinsi berikut:
                 </p>
               </div>
             </div>
             <span className="inline-flex items-center self-start sm:self-center bg-[#FFD60A] border-2 border-[#111827] px-3.5 py-1 rounded-full text-xs font-black shadow-[2px_2px_0px_#111827]">
-              12 WILAYAH AKTIF
+              KHUSUS PTN (S1 / D4)
             </span>
           </div>
 
