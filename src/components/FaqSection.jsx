@@ -22,8 +22,8 @@ export default function FaqSection() {
       a: 'Belum bisa. Periode ini khusus mahasiswa aktif S1/D4 PTN di 12 provinsi wilayah program.',
     },
     {
-      q: 'Apakah formulir bisa disimpan draft & di mana cek pengumuman?',
-      a: 'Draft tersimpan otomatis di browser sebelum dikirim. Hasil Administrasi (27 Nov) & Penerima (30 Nov) dicek langsung lewat menu Pengumuman/Penerima.',
+      q: 'Apakah formulir bisa disimpan draft & kapan pengumuman dirilis?',
+      a: 'Draft tersimpan otomatis di browser sebelum dikirim. Pengumuman Administrasi (27 Nov) & Penerima Akhir (30 Nov) akan dirilis resmi di portal ini sesuai jadwal.',
     },
   ];
 

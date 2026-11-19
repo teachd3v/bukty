@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Banknote, GraduationCap, MapPin, Clock, Trophy, Megaphone } from 'lucide-react';
-import { REGISTRATION_DEADLINE_ISO } from '../utils/buktyConfig';
+import { REGISTRATION_DEADLINE_ISO, SHOW_ANNOUNCEMENT_MENUS } from '../utils/buktyConfig';
 
 export default function HeroSection({ onOpenForm, isClosed }) {
   const targetDate = new Date(REGISTRATION_DEADLINE_ISO).getTime();
@@ -154,26 +154,28 @@ export default function HeroSection({ onOpenForm, isClosed }) {
               </div>
             </div>
 
-            {/* Secondary Action Buttons (Side-by-side on mobile; registration CTA stays at bottom) */}
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-3 pt-0.5">
-              <a
-                href="#pengumuman"
-                className="btn-primary text-[11px] sm:text-sm py-2.5 sm:py-3.5 px-3 sm:px-6 w-full sm:w-auto"
-              >
-                <Megaphone className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#FFD60A] shrink-0" />
-                <span className="sm:hidden">Pengumuman</span>
-                <span className="hidden sm:inline">Pengumuman Administrasi</span>
-              </a>
+            {/* Secondary Action Buttons (hidden during registration phase; enable via SHOW_ANNOUNCEMENT_MENUS) */}
+            {SHOW_ANNOUNCEMENT_MENUS && (
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-3 pt-0.5">
+                <a
+                  href="#pengumuman"
+                  className="btn-primary text-[11px] sm:text-sm py-2.5 sm:py-3.5 px-3 sm:px-6 w-full sm:w-auto"
+                >
+                  <Megaphone className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#FFD60A] shrink-0" />
+                  <span className="sm:hidden">Pengumuman</span>
+                  <span className="hidden sm:inline">Pengumuman Administrasi</span>
+                </a>
 
-              <a
-                href="#pantukhir"
-                className="btn-secondary text-[11px] sm:text-sm py-2.5 sm:py-3.5 px-3 sm:px-5 w-full sm:w-auto"
-              >
-                <Trophy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#1D4ED8] shrink-0" />
-                <span className="sm:hidden">Penerima Akhir</span>
-                <span className="hidden sm:inline">Penerima Akhir</span>
-              </a>
-            </div>
+                <a
+                  href="#pantukhir"
+                  className="btn-secondary text-[11px] sm:text-sm py-2.5 sm:py-3.5 px-3 sm:px-5 w-full sm:w-auto"
+                >
+                  <Trophy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#1D4ED8] shrink-0" />
+                  <span className="sm:hidden">Penerima Akhir</span>
+                  <span className="hidden sm:inline">Penerima Akhir</span>
+                </a>
+              </div>
+            )}
           </div>
         </div>
       </div>

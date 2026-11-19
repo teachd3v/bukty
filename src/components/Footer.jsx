@@ -1,5 +1,6 @@
 import React from 'react';
 import { Instagram, Globe, MessageCircle, Mail, MapPin, GraduationCap } from 'lucide-react';
+import { SHOW_ANNOUNCEMENT_MENUS } from '../utils/buktyConfig';
 
 export default function Footer() {
   return (
@@ -59,8 +60,12 @@ export default function Footer() {
               <li><a href="#persyaratan" className="hover:text-[#FFD60A] transition-colors">Syarat & 13 Dokumen</a></li>
               <li><a href="#jadwal" className="hover:text-[#FFD60A] transition-colors">Jadwal Seleksi</a></li>
               <li><a href="#faq" className="hover:text-[#FFD60A] transition-colors">Tanya Jawab (FAQ)</a></li>
-              <li><a href="#pengumuman" className="hover:text-[#FFD60A] transition-colors">Pengumuman</a></li>
-              <li><a href="#pantukhir" className="hover:text-[#FFD60A] transition-colors">Daftar Penerima</a></li>
+              {SHOW_ANNOUNCEMENT_MENUS && (
+                <>
+                  <li><a href="#pengumuman" className="hover:text-[#FFD60A] transition-colors">Pengumuman</a></li>
+                  <li><a href="#pantukhir" className="hover:text-[#FFD60A] transition-colors">Daftar Penerima</a></li>
+                </>
+              )}
             </ul>
           </div>
 

@@ -4,6 +4,10 @@
 export const REGISTRATION_DEADLINE_ISO = '2026-11-25T23:59:59+07:00';
 export const REGISTRATION_DEADLINE_LABEL = '25 November 2026 pukul 23:59 WIB';
 
+// Toggle visibility of Pengumuman Administrasi & Penerima Akhir menus/buttons on landing page
+// Set to true once announcement phase begins (direct hash routes #pengumuman & #pantukhir remain active)
+export const SHOW_ANNOUNCEMENT_MENUS = false;
+
 // 12 Target Provinces of BUKTY Program (from DRAFT_PROGRAM_BUKTY.docx)
 export const TARGET_PROVINCES = [
   'Jawa Timur',

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Menu, X, ArrowRight, Megaphone } from 'lucide-react';
+import { SHOW_ANNOUNCEMENT_MENUS } from '../utils/buktyConfig';
 
-export default function Navbar({ onOpenForm, isClosed }) {
+export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navLinks = [
@@ -46,24 +47,26 @@ export default function Navbar({ onOpenForm, isClosed }) {
           ))}
         </nav>
 
-        {/* Desktop Actions */}
-        <div className="hidden md:flex items-center gap-2.5">
-          <a
-            href="#pengumuman"
-            className="px-3.5 py-2 bg-white hover:bg-[#EFF6FF] text-[#111827] border-2 border-[#111827] rounded-xl text-xs font-black shadow-[2px_2px_0px_#111827] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_#111827] transition-all inline-flex items-center gap-1.5"
-          >
-            <Megaphone className="w-3.5 h-3.5 text-[#1D4ED8]" />
-            <span>Pengumuman</span>
-          </a>
+        {/* Desktop Actions (shown only when announcement phase is active) */}
+        {SHOW_ANNOUNCEMENT_MENUS && (
+          <div className="hidden md:flex items-center gap-2.5">
+            <a
+              href="#pengumuman"
+              className="px-3.5 py-2 bg-white hover:bg-[#EFF6FF] text-[#111827] border-2 border-[#111827] rounded-xl text-xs font-black shadow-[2px_2px_0px_#111827] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_#111827] transition-all inline-flex items-center gap-1.5"
+            >
+              <Megaphone className="w-3.5 h-3.5 text-[#1D4ED8]" />
+              <span>Pengumuman</span>
+            </a>
 
-          <a
-            href="#pantukhir"
-            className="px-3.5 py-2 bg-[#1D4ED8] hover:bg-[#1E3A8A] text-white border-2 border-[#111827] rounded-xl text-xs font-black shadow-[2px_2px_0px_#111827] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_#111827] transition-all inline-flex items-center gap-1.5"
-          >
-            <span>Penerima</span>
-            <ArrowRight className="w-3.5 h-3.5 text-[#FFD60A]" />
-          </a>
-        </div>
+            <a
+              href="#pantukhir"
+              className="px-3.5 py-2 bg-[#1D4ED8] hover:bg-[#1E3A8A] text-white border-2 border-[#111827] rounded-xl text-xs font-black shadow-[2px_2px_0px_#111827] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_#111827] transition-all inline-flex items-center gap-1.5"
+            >
+              <span>Penerima</span>
+              <ArrowRight className="w-3.5 h-3.5 text-[#FFD60A]" />
+            </a>
+          </div>
+        )}
 
         {/* Mobile Hamburger */}
         <button
@@ -84,29 +87,31 @@ export default function Navbar({ onOpenForm, isClosed }) {
                 key={link.label}
                 href={link.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className="font-extrabold text-xs text-[#111827] hover:text-[#1D4ED8] py-2 border-b border-gray-200 flex items-center justify-between"
+                className="font-extrabold text-xs text-[#111827] hover:text-[#1D4ED8] py-2 border-b border-gray-200 flex items-center justify-between last:border-b-0"
               >
                 <span>{link.label}</span>
                 <ArrowRight className="w-3 h-3 text-gray-400" />
               </a>
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <a
-              href="#pengumuman"
-              onClick={() => setMobileMenuOpen(false)}
-              className="py-2.5 px-3 bg-white border-2 border-[#111827] rounded-xl text-xs font-black text-center shadow-[2px_2px_0px_#111827]"
-            >
-              Pengumuman
-            </a>
-            <a
-              href="#pantukhir"
-              onClick={() => setMobileMenuOpen(false)}
-              className="py-2.5 px-3 bg-[#1D4ED8] text-white border-2 border-[#111827] rounded-xl text-xs font-black text-center shadow-[2px_2px_0px_#111827]"
-            >
-              Penerima
-            </a>
-          </div>
+          {SHOW_ANNOUNCEMENT_MENUS && (
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <a
+                href="#pengumuman"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-2.5 px-3 bg-white border-2 border-[#111827] rounded-xl text-xs font-black text-center shadow-[2px_2px_0px_#111827]"
+              >
+                Pengumuman
+              </a>
+              <a
+                href="#pantukhir"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-2.5 px-3 bg-[#1D4ED8] text-white border-2 border-[#111827] rounded-xl text-xs font-black text-center shadow-[2px_2px_0px_#111827]"
+              >
+                Penerima
+              </a>
+            </div>
+          )}
         </div>
       )}
     </header>
