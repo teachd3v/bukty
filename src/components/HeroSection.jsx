@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Banknote, GraduationCap, MapPin, Clock, Trophy, Megaphone } from 'lucide-react';
+import { Banknote, GraduationCap, MapPin, Clock, Trophy, Megaphone } from 'lucide-react';
 import { REGISTRATION_DEADLINE_ISO } from '../utils/buktyConfig';
 
 export default function HeroSection({ onOpenForm, isClosed }) {
@@ -154,27 +154,8 @@ export default function HeroSection({ onOpenForm, isClosed }) {
               </div>
             </div>
 
-            {/* Primary & Secondary Action Buttons */}
+            {/* Secondary Action Buttons (Registration CTA is placed at the bottom so visitors read all info first) */}
             <div className="flex flex-col sm:flex-row flex-wrap gap-3 pt-1">
-              {!isClosed ? (
-                <button
-                  onClick={onOpenForm}
-                  className="btn-yellow text-xs sm:text-sm py-3.5 px-7 w-full sm:w-auto"
-                >
-                  <span>Daftar Program BUKTY Sekarang</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              ) : (
-                <a
-                  href="#pantukhir"
-                  className="btn-primary text-xs sm:text-sm py-3.5 px-7 w-full sm:w-auto"
-                >
-                  <Trophy className="w-4 h-4 text-[#FFD60A]" />
-                  <span>Lihat Penerima Lolos (Pantukhir)</span>
-                  <ArrowRight className="w-4 h-4" />
-                </a>
-              )}
-
               <a
                 href="#pengumuman"
                 className="btn-primary text-xs sm:text-sm py-3.5 px-6 w-full sm:w-auto"
