@@ -15,6 +15,8 @@ import {
   Link as LinkIcon,
   Loader2,
   AlertTriangle,
+  Search,
+  Building2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import html2pdf from 'html2pdf.js';
@@ -98,14 +100,58 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const modalBodyRef = useRef(null);
 
+  // PTN Campus Autocomplete State (/api/kampus -> API Indonesia Kampus + PTN fallback)
+  const [campusResults, setCampusResults] = useState([]);
+  const [isSearchingCampus, setIsSearchingCampus] = useState(false);
+  const [showCampusDropdown, setShowCampusDropdown] = useState(false);
+  const [campusSource, setCampusSource] = useState('');
+  const campusBoxRef = useRef(null);
+
   useEffect(() => {
     const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
     if (savedDraft) {
       try {
-        setFormData((prev) => ({ ...prev, ...JSON.parse(savedDraft) }));
+        setFormData((prev) => ({ ...prev, ...JSON.parse(savedDraft), jenisPt: 'PTN' }));
       } catch (err) {}
     }
   }, []);
+
+  // Close campus dropdown on outside click
+  useEffect(() => {
+    const handleOutside = (e) => {
+      if (campusBoxRef.current && !campusBoxRef.current.contains(e.target)) {
+        setShowCampusDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
+
+  // Debounced PTN lookup via /api/kampus (saves API Indonesia credits)
+  useEffect(() => {
+    if (!showCampusDropdown) return;
+    const query = (formData.perguruanTinggi || '').trim();
+    const timer = setTimeout(async () => {
+      setIsSearchingCampus(true);
+      try {
+        const params = new URLSearchParams();
+        if (query) params.set('q', query);
+        if (formData.provinsi) params.set('province', formData.provinsi);
+        const res = await fetch(`/api/kampus?${params.toString()}`);
+        if (res.ok) {
+          const json = await res.json();
+          setCampusResults(Array.isArray(json.data) ? json.data : []);
+          setCampusSource(json.source || '');
+        }
+      } catch (err) {
+        setCampusResults([]);
+      } finally {
+        setIsSearchingCampus(false);
+      }
+    }, query ? 350 : 0);
+
+    return () => clearTimeout(timer);
+  }, [formData.perguruanTinggi, formData.provinsi, showCampusDropdown]);
 
   const saveDraftToLocalStorage = (data) => {
     try {
@@ -466,7 +512,7 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
               <GraduationCap className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-black text-sm sm:text-base md:text-lg text-white">
+              <h3 className="font-black text-sm sm:text-base md:text-lg !text-white">
                 Formulir Pendaftaran BUKTY — Dompet Dhuafa
               </h3>
               <p className="text-[11px] font-bold text-blue-100 hidden sm:block">
@@ -1061,24 +1107,10 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
                   </div>
 
                   <div>
-                    <label className="form-label mb-2 block">Jenis Perguruan Tinggi *</label>
-                    <div className="flex gap-4">
-                      {[
-                        { val: 'PTN', label: 'PTN (Negeri)' },
-                        { val: 'PTS', label: 'PTS / Lainnya' },
-                      ].map((opt) => (
-                        <label key={opt.val} className="flex items-center gap-2 cursor-pointer font-bold text-xs">
-                          <input
-                            type="radio"
-                            name="jenisPt"
-                            value={opt.val}
-                            checked={formData.jenisPt === opt.val}
-                            onChange={(e) => handleChange('jenisPt', e.target.value)}
-                            className="accent-[#1D4ED8]"
-                          />
-                          <span>{opt.label}</span>
-                        </label>
-                      ))}
+                    <label className="form-label mb-1.5 block">Jenis Perguruan Tinggi</label>
+                    <div className="inline-flex items-center gap-2 bg-[#FFD60A] text-[#111827] border-2 border-[#111827] px-3 py-1.5 rounded-xl text-xs font-black shadow-[2px_2px_0px_#111827]">
+                      <Building2 className="w-3.5 h-3.5" />
+                      <span>Khusus PTN (Perguruan Tinggi Negeri)</span>
                     </div>
                   </div>
 
@@ -1087,23 +1119,86 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
                       Info Mahasiswa Baru: NIM bersifat opsional, IPK diganti Rata-rata Nilai Rapor, dan KHS/KTM dapat menggunakan Rapor/Kartu Pelajar.
                     </p>
                   )}
-                  {formData.jenisPt === 'PTS' && (
-                    <p className="sm:col-span-2 text-[11px] font-bold text-amber-700">
-                      Catatan: Persyaratan resmi BUKTY dikhususkan bagi Perguruan Tinggi Negeri (PTN).
-                    </p>
-                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="form-label">Nama Perguruan Tinggi *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Contoh: Universitas Gadjah Mada / Universitas Indonesia"
-                      value={formData.perguruanTinggi}
-                      onChange={(e) => handleChange('perguruanTinggi', e.target.value)}
-                    />
+                  <div ref={campusBoxRef} className="relative">
+                    <label className="form-label">Nama Perguruan Tinggi Negeri (PTN) *</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        className="form-input pr-9"
+                        placeholder="Ketik nama / singkatan PTN (mis: UGM, UI, ITB, UNAIR)..."
+                        value={formData.perguruanTinggi}
+                        onFocus={() => setShowCampusDropdown(true)}
+                        onChange={(e) => {
+                          handleChange('perguruanTinggi', e.target.value);
+                          setShowCampusDropdown(true);
+                        }}
+                        autoComplete="off"
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
+                        {isSearchingCampus ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-[#1D4ED8]" />
+                        ) : (
+                          <Search className="w-4 h-4" />
+                        )}
+                      </div>
+                    </div>
+
+                    {showCampusDropdown && (
+                      <div className="absolute left-0 right-0 mt-1.5 z-30 bg-white border-2 border-[#111827] rounded-2xl shadow-[4px_4px_0px_#111827] overflow-hidden">
+                        <div className="bg-[#EFF6FF] border-b-2 border-[#111827] px-3 py-1.5 flex items-center justify-between text-[10px] font-black text-[#1E3A8A]">
+                          <span>Pilih PTN (atau ketik manual jika tidak muncul)</span>
+                          {campusSource === 'apiindonesia' && (
+                            <span className="bg-[#FFD60A] text-[#111827] border border-[#111827] px-1.5 py-0.5 rounded text-[9px]">
+                              PDDikti Live
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="max-h-52 overflow-y-auto divide-y divide-gray-100">
+                          {isSearchingCampus ? (
+                            <div className="p-3 text-center text-xs font-bold text-gray-500 flex items-center justify-center gap-2">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#1D4ED8]" />
+                              <span>Mencari data PTN...</span>
+                            </div>
+                          ) : campusResults.length > 0 ? (
+                            campusResults.map((campus) => (
+                              <button
+                                key={campus.id}
+                                type="button"
+                                onClick={() => {
+                                  handleChange('perguruanTinggi', campus.name);
+                                  setShowCampusDropdown(false);
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-[#FEF9C3] transition-colors flex items-start justify-between gap-2 cursor-pointer"
+                              >
+                                <div className="min-w-0">
+                                  <div className="text-xs font-extrabold text-[#111827] leading-snug">
+                                    {campus.name}
+                                  </div>
+                                  {(campus.regency_name || campus.province_name) && (
+                                    <div className="text-[10px] font-semibold text-gray-500 truncate">
+                                      {[campus.regency_name, campus.province_name].filter(Boolean).join(' • ')}
+                                    </div>
+                                  )}
+                                </div>
+                                {campus.short_name && (
+                                  <span className="shrink-0 bg-[#DBEAFE] text-[#1E3A8A] border border-[#111827] px-1.5 py-0.5 rounded-md text-[9px] font-black font-mono-code">
+                                    {campus.short_name}
+                                  </span>
+                                )}
+                              </button>
+                            ))
+                          ) : (
+                            <div className="p-3 text-[11px] font-bold text-gray-500 text-center">
+                              Tidak ditemukan di daftar cepat. Anda tetap bisa mengetik nama PTN secara manual.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div>

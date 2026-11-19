@@ -70,6 +70,7 @@ Portal pendaftaran resmi program **Bantuan UKT Yatim (BUKTY)** oleh **Dompet Dhu
 
 4. **Atur Environment Variables / Secrets di Cloudflare Pages**:
    - `ADMIN_PASSWORD`: Password login dashboard `#admin` (default fallback lokal: `admin2026`).
+   - `API_INDONESIA_KEY`: (Opsional) API key dari [apiindonesia.id/produk/kampus](https://apiindonesia.id/produk/kampus) untuk pencarian PTN live PDDikti lewat `/api/kampus` (untuk lokal simpan di `.dev.vars`; jika kosong otomatis memakai daftar 85+ PTN/UIN/Politeknik Negeri bawaan).
    - `GOOGLE_SHEET_WEBHOOK`: (Opsional) URL Apps Script webhook untuk sinkronisasi pendaftar ke Google Sheets.
 
 5. **Deploy**:
