@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bukty",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-11-18",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bukty-db",
+      "database_id": "REPLACE_WITH_YOUR_BUKTY_D1_DATABASE_ID"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "bukty-files"
+    }
+  ]
+}

@@ -1,0 +1,291 @@
+@import "tailwindcss";
+
+:root {
+  /* Warm Paper & Soft Sky Surfaces */
+  --bg-canvas: #FFFDF5;
+  --bg-card: #FFFFFF;
+  --bg-surface: #EFF6FF;
+  --bg-surface-yellow: #FEF9C3;
+
+  /* Primary Brand: Royal Cobalt Blue */
+  --color-blue: #1D4ED8;
+  --color-blue-dark: #1E3A8A;
+  --color-blue-deep: #0F172A;
+  --color-blue-light: #DBEAFE;
+
+  /* Primary Accent: Sunburst Yellow */
+  --color-yellow: #FFD60A;
+  --color-yellow-dark: #EAB308;
+  --color-yellow-light: #FEFCE8;
+
+  /* Semantic Status */
+  --color-success: #15803D;
+  --color-success-light: #DCFCE7;
+  --color-danger: #DC2626;
+  --color-danger-light: #FEE2E2;
+
+  /* Neo-Brutalist Ink & Borders */
+  --color-ink: #111827;
+  --color-ink-muted: #4B5563;
+  --color-border: #111827;
+
+  /* Typography */
+  --font-heading: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  --font-display: 'Syne', 'Outfit', sans-serif;
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Hard Offset Brutalist Shadows (zero blur) */
+  --shadow-brutal-sm: 2px 2px 0px #111827;
+  --shadow-brutal: 4px 4px 0px #111827;
+  --shadow-brutal-md: 6px 6px 0px #111827;
+  --shadow-brutal-lg: 8px 8px 0px #111827;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  line-height: 1.65;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Typography Hierarchy */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  color: var(--color-ink);
+  line-height: 1.2;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-heading {
+  font-family: var(--font-heading);
+}
+
+.font-mono-code {
+  font-family: var(--font-mono);
+}
+
+/* Neo-Brutalist Cards */
+.brutal-card {
+  background-color: var(--bg-card);
+  border: 2.5px solid var(--color-border);
+  border-radius: 22px;
+  box-shadow: var(--shadow-brutal-md);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.brutal-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-brutal-lg);
+}
+
+/* Tactile Primary Button (Royal Cobalt Blue) */
+.btn-primary {
+  background-color: var(--color-blue);
+  color: #FFFFFF;
+  border: 2.5px solid var(--color-border);
+  border-radius: 14px;
+  padding: 13px 28px;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 0.95rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-brutal);
+  transition: all 0.16s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-blue-dark);
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-brutal-md);
+}
+
+.btn-primary:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px #111827;
+}
+
+/* Tactile Accent Button (Sunburst Yellow) */
+.btn-yellow {
+  background-color: var(--color-yellow);
+  color: var(--color-ink);
+  border: 2.5px solid var(--color-border);
+  border-radius: 14px;
+  padding: 13px 28px;
+  font-family: var(--font-heading);
+  font-weight: 900;
+  font-size: 0.95rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-brutal);
+  transition: all 0.16s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+}
+
+.btn-yellow:hover {
+  background-color: var(--color-yellow-dark);
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-brutal-md);
+}
+
+.btn-yellow:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px #111827;
+}
+
+/* Tactile Secondary Button (Crisp White) */
+.btn-secondary {
+  background-color: #FFFFFF;
+  color: var(--color-ink);
+  border: 2.5px solid var(--color-border);
+  border-radius: 14px;
+  padding: 13px 26px;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 0.95rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-brutal);
+  transition: all 0.16s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+}
+
+.btn-secondary:hover {
+  background-color: var(--bg-surface);
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-brutal-md);
+}
+
+.btn-secondary:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px #111827;
+}
+
+/* Form Controls */
+.form-label {
+  display: block;
+  font-weight: 800;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+  color: var(--color-ink);
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  width: 100%;
+  padding: 11px 15px;
+  border: 2px solid var(--color-border);
+  border-radius: 12px;
+  background-color: #FFFFFF;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: var(--color-ink);
+  outline: none;
+  transition: all 0.18s ease;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  border-color: var(--color-blue);
+  box-shadow: 3px 3px 0px var(--color-blue);
+  background-color: #FEFCE8;
+}
+
+.form-checkbox {
+  width: 19px;
+  height: 19px;
+  accent-color: var(--color-blue);
+  cursor: pointer;
+}
+
+/* Custom Neo-Brutalist Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-canvas);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-yellow);
+  border: 2px solid var(--color-border);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-blue);
+}
+
+/* Print Rules */
+@media print {
+  body {
+    background-color: #FFF !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  nav, header, section, footer, .no-print {
+    display: none !important;
+  }
+
+  .id-printable-backdrop {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+
+  .id-printable-receipt {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #FFF !important;
+  }
+}
+
+/* Seamless Marquee Animation */
+@keyframes marquee {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.animate-marquee {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: marquee 28s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
