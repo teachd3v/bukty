@@ -27,6 +27,8 @@ import {
   Check,
   XCircle,
   HelpCircle,
+  Zap,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   calculateBuktyScores,
@@ -43,6 +45,8 @@ import {
   createDefaultInterviewState,
   parseInterviewJson,
   calculateInterviewEvaluation,
+  BUKTY_RECIPIENT_QUOTA,
+  rankInterviewCandidates,
 } from '../utils/buktyConfig';
 
 const SESSION_KEY = 'bukty_admin_session';
@@ -161,9 +165,13 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     } catch (e) {}
   };
 
-  // Approved Tab States
+  // Approved / Interview Final Ranking (Top 32 Quota) States
   const [approvedSearchQuery, setApprovedSearchQuery] = useState('');
-  const [approvedNameSort, setApprovedNameSort] = useState('default'); // 'default' | 'asc' | 'desc'
+  const [approvedNameSort, setApprovedNameSort] = useState('default'); // 'default' (Interview Rank) | 'asc' | 'desc'
+  const [interviewQuotaFilter, setInterviewQuotaFilter] = useState('ALL_ASSESSED'); // 'ALL_ASSESSED' | 'TOP_QUOTA' | 'CADANGAN' | 'GUGUR' | 'ALL'
+  const [recipientQuotaLimit, setRecipientQuotaLimit] = useState(BUKTY_RECIPIENT_QUOTA); // Default 32
+  const [autoApplyTop32OnSave, setAutoApplyTop32OnSave] = useState(true);
+  const [isApplyingQuota, setIsApplyingQuota] = useState(false);
 
   // Announcement, Timeline & Pantukhir States
   const [timelineEvents, setTimelineEvents] = useState(() => SCHEDULE_EVENTS.map((item) => ({ ...item })));
@@ -224,22 +232,33 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     );
   };
 
-  const getApprovedData = () => {
-    let approved = registrations
-      .filter((r) => r.status_seleksi === 'Lolos Administrasi' || r.status_seleksi === 'Diterima')
-      .map((r) => ({ ...r, ...calculateBuktyScores(r) }));
+  // Full Ranked Interview Candidates (Ordered by Interview Final Score, with Top 32 Quota classification)
+  const getInterviewRankedData = (ignoreFilters = false) => {
+    const rankedAll = rankInterviewCandidates(registrations, recipientQuotaLimit);
+    if (ignoreFilters) return rankedAll;
+
+    let filtered = rankedAll;
+    if (interviewQuotaFilter === 'ALL_ASSESSED') {
+      filtered = rankedAll.filter((r) => r.interviewEval.isAssessed || r.status_seleksi === 'Diterima' || r.status_seleksi === 'Lolos Administrasi');
+    } else if (interviewQuotaFilter === 'TOP_QUOTA') {
+      filtered = rankedAll.filter((r) => r.quotaCategory === 'TOP_QUOTA');
+    } else if (interviewQuotaFilter === 'CADANGAN') {
+      filtered = rankedAll.filter((r) => r.quotaCategory === 'CADANGAN');
+    } else if (interviewQuotaFilter === 'GUGUR') {
+      filtered = rankedAll.filter((r) => r.quotaCategory === 'GUGUR');
+    } else if (interviewQuotaFilter === 'BELUM_WAWANCARA') {
+      filtered = rankedAll.filter((r) => !r.interviewEval.isAssessed);
+    }
 
     if (approvedNameSort === 'asc') {
-      approved = [...approved].sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
+      filtered = [...filtered].sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
     } else if (approvedNameSort === 'desc') {
-      approved = [...approved].sort((a, b) => (b.nama || '').localeCompare(a.nama || ''));
-    } else {
-      approved = [...approved].sort((a, b) => b.score_total - a.score_total);
+      filtered = [...filtered].sort((a, b) => (b.nama || '').localeCompare(a.nama || ''));
     }
 
     const search = approvedSearchQuery.trim().toLowerCase();
-    if (!search) return approved;
-    return approved.filter(
+    if (!search) return filtered;
+    return filtered.filter(
       (x) =>
         (x.nama || '').toLowerCase().includes(search) ||
         (x.nim || '').toLowerCase().includes(search) ||
@@ -249,13 +268,271 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     );
   };
 
+  const getApprovedData = () => getInterviewRankedData(false);
+
+  // Sync Top 32 Eligible Interview Candidates automatically to 'Diterima' (and 33+ to 'Lolos Administrasi' / Cadangan)
+  const applyTopQuotaStatusesToList = async (sourceList, showSuccessAlert = false) => {
+    const ranked = rankInterviewCandidates(sourceList, recipientQuotaLimit);
+    const batchUpdates = [];
+
+    const nextList = sourceList.map((item) => {
+      const rankInfo = ranked.find((r) => r.id === item.id);
+      if (!rankInfo || !rankInfo.interviewEval.isAssessed) return item;
+
+      const targetStatus = rankInfo.autoTargetStatus;
+      if (targetStatus && item.status_seleksi !== targetStatus) {
+        batchUpdates.push({ id: item.id, status_seleksi: targetStatus });
+        return { ...item, status_seleksi: targetStatus };
+      }
+      return item;
+    });
+
+    if (batchUpdates.length > 0) {
+      setRegistrations(nextList);
+      localStorage.setItem(LOCAL_SUBMISSIONS_KEY, JSON.stringify(nextList));
+      try {
+        await fetch('/api/admin/registrations', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updates: batchUpdates }),
+        });
+      } catch (err) {
+        console.error('Batch quota sync failed:', err);
+      }
+    }
+
+    if (showSuccessAlert) {
+      const topRecipientsCount = ranked.filter((r) => r.quotaCategory === 'TOP_QUOTA').length;
+      const cadanganCount = ranked.filter((r) => r.quotaCategory === 'CADANGAN').length;
+      alert(
+        `Penetapan Otomatis Kuota ${recipientQuotaLimit} Penerima BUKTY Berhasil!\n\n` +
+          `• Diterima (Top ${recipientQuotaLimit} Nilai Tertinggi): ${topRecipientsCount} Mahasiswa\n` +
+          `• Cadangan (Ranking ${recipientQuotaLimit + 1}+): ${cadanganCount} Mahasiswa\n` +
+          `• Total Perubahan Status Tersimpan: ${batchUpdates.length} Data`
+      );
+    }
+
+    return nextList;
+  };
+
+  const handleManualApplyTop32Quota = async () => {
+    setIsApplyingQuota(true);
+    try {
+      await applyTopQuotaStatusesToList(registrations, true);
+    } finally {
+      setIsApplyingQuota(false);
+    }
+  };
+
+  // Export Styled Excel (.xls) for Final Interview Results & Top 32 Quota Ranking
+  const exportInterviewToExcel = (dataset, filenamePrefix = 'Hasil_Akhir_Wawancara_BUKTY') => {
+    const rankedSource = dataset && dataset.length > 0 ? dataset : getInterviewRankedData(false);
+    if (rankedSource.length === 0) {
+      alert('Belum ada data hasil wawancara untuk diekspor ke Excel.');
+      return;
+    }
+
+    const escHtml = (val) =>
+      String(val ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+    const verifStatusLabel = (v) => (v === 'pass' ? 'SESUAI' : v === 'fail' ? 'GUGUR' : '-');
+
+    const rowsHtml = rankedSource
+      .map((r, idx) => {
+        const parsed = r.parsedInterview || parseInterviewJson(r.interview_json);
+        const ev = r.interviewEval || calculateInterviewEvaluation(parsed);
+        const ver = parsed.verifications || {};
+
+        let rowBg = '#FFFFFF';
+        let quotaBadgeText = r.quotaLabel || 'Belum Diwawancara';
+        if (r.quotaCategory === 'TOP_QUOTA') {
+          rowBg = '#DCFCE7'; // Soft green for Top 32
+        } else if (r.quotaCategory === 'CADANGAN') {
+          rowBg = '#FEF9C3'; // Soft yellow for Waiting List
+        } else if (r.quotaCategory === 'GUGUR') {
+          rowBg = '#FEE2E2'; // Soft red for Gugur
+        }
+
+        const rankNumber = r.eligibleRank
+          ? r.eligibleRank
+          : r.interviewRank
+          ? `G-${r.interviewRank}`
+          : idx + 1;
+
+        return `
+          <tr style="background-color:${rowBg};">
+            <td style="text-align:center;font-weight:bold;">${escHtml(rankNumber)}</td>
+            <td style="font-weight:bold;">${escHtml(quotaBadgeText)}</td>
+            <td style="font-weight:bold;">${escHtml(r.status_seleksi || 'Pending')}</td>
+            <td style="mso-number-format:'\\@';">${escHtml(r.reg_id)}</td>
+            <td style="font-weight:bold;">${escHtml(r.nama)}</td>
+            <td style="mso-number-format:'\\@';">${escHtml(r.nik)}</td>
+            <td>${escHtml(r.status_yatim)}</td>
+            <td>${escHtml(r.perguruan_tinggi)}</td>
+            <td>${escHtml(r.fakultas_prodi)}</td>
+            <td style="text-align:center;">${escHtml(r.jenjang)}</td>
+            <td style="text-align:center;">${escHtml(r.semester)}</td>
+            <td style="mso-number-format:'\\@';">${escHtml(r.nim)}</td>
+            <td style="text-align:center;">${escHtml(r.ipk)}</td>
+            <td>${escHtml(r.provinsi)}</td>
+            <td style="mso-number-format:'\\@';">${escHtml(r.no_hp)}</td>
+            <td>${escHtml(r.nominal_ukt)}</td>
+            <td style="text-align:center;font-weight:bold;">${escHtml(parsed.uktPaymentStatus || r.status_ukt || '-')}</td>
+            <td>${escHtml(r.bank_rekening)}</td>
+            <td style="mso-number-format:'\\@';">${escHtml(r.nomor_rekening)}</td>
+            <td>${escHtml(r.atas_nama_rekening)}</td>
+            <td>${escHtml(r.nama_ortu)}</td>
+            <td>${escHtml(r.pekerjaan_ortu)}</td>
+            <td>${escHtml(r.penghasilan_ortu)}</td>
+            <td style="text-align:center;">${escHtml(r.jumlah_tanggungan)}</td>
+            <td>${escHtml(r.status_rumah)}</td>
+            <td style="text-align:center;">${verifStatusLabel(ver.identitas_kampus)}</td>
+            <td style="text-align:center;">${verifStatusLabel(ver.status_yatim)}</td>
+            <td style="text-align:center;">${verifStatusLabel(ver.agama_islam)}</td>
+            <td style="text-align:center;">${verifStatusLabel(ver.jenjang_mahasiswa)}</td>
+            <td style="text-align:center;">${verifStatusLabel(ver.foto_rumah)}</td>
+            <td style="text-align:center;">${verifStatusLabel(ver.sktm)}</td>
+            <td style="text-align:center;">${verifStatusLabel(ver.slip_ukt)}</td>
+            <td style="text-align:center;">${verifStatusLabel(ver.kesan_kejujuran)}</td>
+            <td style="text-align:center;font-weight:bold;">${
+              ev.isVerificationFailed
+                ? `GUGUR (${ev.failedItems.join(', ')})`
+                : ev.verifiedCount > 0
+                ? `LOLOS (${ev.passedCount}/8)`
+                : 'BELUM'
+            }</td>
+            <td style="text-align:center;">${escHtml(parsed.scores?.kondisi_ekonomi || 0)}</td>
+            <td style="text-align:center;">${escHtml(ev.breakdown?.kondisi_ekonomi?.weighted || 0)}</td>
+            <td style="text-align:center;">${escHtml(parsed.scores?.motivasi_studi || 0)}</td>
+            <td style="text-align:center;">${escHtml(ev.breakdown?.motivasi_studi?.weighted || 0)}</td>
+            <td style="text-align:center;">${escHtml(parsed.scores?.konsistensi_esai || 0)}</td>
+            <td style="text-align:center;">${escHtml(ev.breakdown?.konsistensi_esai?.weighted || 0)}</td>
+            <td style="text-align:center;">${escHtml(parsed.scores?.sikap_komunikasi || 0)}</td>
+            <td style="text-align:center;">${escHtml(ev.breakdown?.sikap_komunikasi?.weighted || 0)}</td>
+            <td style="text-align:center;font-weight:bold;font-size:12pt;">${escHtml(
+              ev.scoredIndicatorsCount > 0 ? ev.totalWeightedScore : ''
+            )}</td>
+            <td style="text-align:center;">${escHtml(r.score_total)}</td>
+            <td style="font-weight:bold;">${escHtml(ev.isAssessed ? ev.recommendation : 'BELUM DIWAWANCARA')}</td>
+            <td>${escHtml(r.catatan_admin || '')}</td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    const excelTemplate = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="UTF-8" />
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>Ranking Wawancara BUKTY</x:Name>
+                <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <style>
+          table { border-collapse: collapse; font-family: Arial, sans-serif; font-size: 10pt; }
+          th { background-color: #1D4ED8; color: #FFFFFF; font-weight: bold; border: 1px solid #111827; padding: 8px; text-align: center; }
+          td { border: 1px solid #9CA3AF; padding: 6px; vertical-align: middle; }
+        </style>
+      </head>
+      <body>
+        <h3>LAPORAN RANKING HASIL AKHIR WAWANCARA &amp; PENETAPAN PENERIMA BUKTY (KUOTA ${recipientQuotaLimit} TERATAS)</h3>
+        <p>Diekspor pada: ${new Date().toLocaleString('id-ID')} WIB • Kuota Utama Penerima Bantuan UKT Yatim: <strong>${recipientQuotaLimit} Mahasiswa Nilai Tertinggi</strong></p>
+        <table>
+          <thead>
+            <tr>
+              <th>Rank Wawancara</th>
+              <th>Kategori Kuota (Top ${recipientQuotaLimit})</th>
+              <th>Status Akhir</th>
+              <th>No. Registrasi</th>
+              <th>Nama Lengkap</th>
+              <th>NIK</th>
+              <th>Status Yatim</th>
+              <th>Perguruan Tinggi</th>
+              <th>Fakultas / Prodi</th>
+              <th>Jenjang</th>
+              <th>Semester</th>
+              <th>NIM</th>
+              <th>IPK</th>
+              <th>Provinsi</th>
+              <th>No. HP / WA</th>
+              <th>Nominal UKT</th>
+              <th>Status Bayar UKT</th>
+              <th>Bank</th>
+              <th>No. Rekening</th>
+              <th>Atas Nama Rekening</th>
+              <th>Nama Ortu</th>
+              <th>Pekerjaan Ortu</th>
+              <th>Penghasilan Ortu</th>
+              <th>Tanggungan</th>
+              <th>Status Rumah</th>
+              <th>1. Identitas &amp; Kampus</th>
+              <th>2. Status Yatim</th>
+              <th>3. Agama Islam</th>
+              <th>4. Jenjang S1/D4</th>
+              <th>5. Foto Rumah</th>
+              <th>6. SKTM</th>
+              <th>7. Slip UKT</th>
+              <th>8. Kejujuran</th>
+              <th>Kesimpulan Verifikasi Bagian 1</th>
+              <th>Skor Ekonomi (1-4)</th>
+              <th>Bobot Ekonomi (40%)</th>
+              <th>Skor Motivasi (1-4)</th>
+              <th>Bobot Motivasi (20%)</th>
+              <th>Skor Esai (1-4)</th>
+              <th>Bobot Esai (20%)</th>
+              <th>Skor Sikap (1-4)</th>
+              <th>Bobot Sikap (20%)</th>
+              <th>TOTAL SKOR WAWANCARA (0-100)</th>
+              <th>Skor Awal BUKTY (0-100)</th>
+              <th>Rekomendasi Rubrik</th>
+              <th>Catatan Pewawancara</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob(['\uFEFF', excelTemplate], {
+      type: 'application/vnd.ms-excel;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filenamePrefix}_Top${recipientQuotaLimit}_${new Date().toISOString().slice(0, 10)}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const exportRowsToCSV = (dataset, filenamePrefix) => {
     if (dataset.length === 0) {
       alert('Tidak ada data untuk diekspor.');
       return;
     }
 
+    const rankedMap = new Map(
+      rankInterviewCandidates(registrations, recipientQuotaLimit).map((item) => [item.id, item])
+    );
+
     const headers = [
+      'Ranking Wawancara', 'Status Kuota Top ' + recipientQuotaLimit,
       'No Registrasi', 'Waktu Submit', 'Nama Lengkap', 'NIK', 'TTL', 'Jenis Kelamin', 'Agama',
       'Provinsi', 'Alamat Domisili', 'Alamat KTP', 'No HP', 'Email', 'Instagram', 'Follow Sosmed',
       'Status Mahasiswa', 'Jenis PT', 'Perguruan Tinggi', 'Fakultas / Prodi', 'Jenjang', 'Semester', 'NIM',
@@ -275,6 +552,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
     const rows = dataset.map((r) => {
       const scores = calculateBuktyScores(r);
+      const rankInfo = rankedMap.get(r.id);
       const parsedInterview = parseInterviewJson(r.interview_json);
       const evalInterview = calculateInterviewEvaluation(parsedInterview);
       const verifSummary = evalInterview.isVerificationFailed
@@ -284,6 +562,8 @@ export default function AdminDashboard({ onLeaveAdmin }) {
         : 'Belum Diverifikasi';
 
       return [
+        escapeCsv(rankInfo?.eligibleRank || rankInfo?.interviewRank || '-'),
+        escapeCsv(rankInfo?.quotaLabel || 'Belum Diwawancara'),
         escapeCsv(r.reg_id),
         escapeCsv(r.submitted_at),
         escapeCsv(r.nama),
@@ -380,7 +660,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     };
     const serializedInterview = JSON.stringify(finalInterviewObj);
 
-    const updated = registrations.map((item) =>
+    let updated = registrations.map((item) =>
       item.id === id
         ? {
             ...item,
@@ -390,6 +670,25 @@ export default function AdminDashboard({ onLeaveAdmin }) {
           }
         : item
     );
+
+    // If autoApplyTop32OnSave is enabled, recalculate Top 32 interview ranking and auto-set Top 32 to 'Diterima'
+    let resolvedCandidateStatus = status;
+    if (autoApplyTop32OnSave) {
+      const rankedAfterEdit = rankInterviewCandidates(updated, recipientQuotaLimit);
+      const editedRankInfo = rankedAfterEdit.find((r) => r.id === id);
+      if (editedRankInfo && editedRankInfo.interviewEval.isAssessed) {
+        resolvedCandidateStatus = editedRankInfo.autoTargetStatus;
+        setLeaderboardStatus(resolvedCandidateStatus);
+      }
+      updated = updated.map((item) => {
+        const rInfo = rankedAfterEdit.find((r) => r.id === item.id);
+        if (rInfo && rInfo.interviewEval.isAssessed) {
+          return { ...item, status_seleksi: rInfo.autoTargetStatus };
+        }
+        return item;
+      });
+    }
+
     setRegistrations(updated);
     localStorage.setItem(LOCAL_SUBMISSIONS_KEY, JSON.stringify(updated));
 
@@ -399,11 +698,15 @@ export default function AdminDashboard({ onLeaveAdmin }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id,
-          status_seleksi: status,
+          status_seleksi: resolvedCandidateStatus,
           catatan_admin: catatan,
           interview_json: serializedInterview,
         }),
       });
+
+      if (autoApplyTop32OnSave) {
+        await applyTopQuotaStatusesToList(updated, false);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -905,8 +1208,10 @@ export default function AdminDashboard({ onLeaveAdmin }) {
       <header className="bg-white border-b-[3px] border-[#111827] sticky top-0 z-30">
         <div
           className={`${
-            activeTab === 'leaderboard' ? 'max-w-[1920px]' : 'max-w-7xl'
-          } mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 transition-all`}
+            activeTab === 'leaderboard' || activeTab === 'approved'
+              ? 'w-full max-w-none px-4 sm:px-6 lg:px-8'
+              : 'max-w-7xl mx-auto px-4 sm:px-6'
+          } py-3 flex flex-wrap items-center justify-between gap-3 transition-all`}
         >
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
@@ -918,11 +1223,11 @@ export default function AdminDashboard({ onLeaveAdmin }) {
             </span>
 
             {/* 4 Tab Selector */}
-            <div className="flex bg-[#EFF6FF] p-1 border-2 border-[#111827] rounded-xl gap-1">
+            <div className="flex bg-[#EFF6FF] p-1 border-2 border-[#111827] rounded-xl gap-1 flex-wrap">
               {[
                 { key: 'list', label: 'Pendaftar' },
-                { key: 'leaderboard', label: 'Leaderboard' },
-                { key: 'approved', label: 'Lolos Seleksi' },
+                { key: 'leaderboard', label: 'Leaderboard & Wawancara' },
+                { key: 'approved', label: `Ranking Wawancara (Kuota ${recipientQuotaLimit})` },
                 { key: 'announcement', label: 'Jadwal & Pengumuman' },
               ].map((t) => (
                 <button
@@ -955,7 +1260,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
       <main
         className={`flex-grow ${
-          activeTab === 'leaderboard'
+          activeTab === 'leaderboard' || activeTab === 'approved'
             ? 'w-full max-w-none px-4 sm:px-6 lg:px-8 py-3'
             : 'max-w-7xl mx-auto px-4 sm:px-6 py-5'
         } w-full space-y-6 transition-all`}
@@ -2075,6 +2380,29 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
                       {/* Ultra-Compact Sticky Decision & Save Footer */}
                       <div className="bg-[#EFF6FF] border-t-2 border-[#111827] px-3 py-2 space-y-1.5 shrink-0">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <label className="inline-flex items-center gap-1.5 text-[9.5px] font-black text-[#1E3A8A] bg-white px-2 py-1 rounded-lg border border-[#111827] cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={autoApplyTop32OnSave}
+                              onChange={(e) => setAutoApplyTop32OnSave(e.target.checked)}
+                              className="accent-[#1D4ED8] w-3.5 h-3.5 cursor-pointer"
+                            />
+                            <span>
+                              Otomatis Tetapkan Top {recipientQuotaLimit} Nilai Wawancara Tertinggi = DITERIMA
+                            </span>
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('approved')}
+                            className="px-2 py-1 bg-[#FFD60A] hover:bg-[#1D4ED8] text-[#111827] hover:text-white border border-[#111827] rounded-lg text-[9px] font-black flex items-center gap-1 cursor-pointer transition-colors"
+                          >
+                            <Trophy className="w-3 h-3" />
+                            <span>Lihat Ranking Top {recipientQuotaLimit}</span>
+                          </button>
+                        </div>
+
                         <div className="flex items-center justify-between gap-2">
                           <div className="grid grid-cols-4 gap-1 flex-1">
                             {[
@@ -2162,106 +2490,481 @@ export default function AdminDashboard({ onLeaveAdmin }) {
           </div>
         )}
 
-        {/* TAB 3: LOLOS SELEKSI */}
-        {activeTab === 'approved' && (
-          <div className="space-y-5">
-            <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex flex-col sm:flex-row gap-3 items-center justify-between">
-              <div className="relative w-full sm:w-80">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Cari peserta lolos..."
-                  value={approvedSearchQuery}
-                  onChange={(e) => setApprovedSearchQuery(e.target.value)}
-                  className="form-input pl-9 pr-3 py-2 text-xs font-bold"
-                />
-              </div>
+        {/* TAB 3: RANKING HASIL AKHIR WAWANCARA & KUOTA OTOMATIS 32 PENERIMA BUKTY */}
+        {activeTab === 'approved' &&
+          (() => {
+            const allRanked = getInterviewRankedData(true);
+            const filteredRanked = getInterviewRankedData(false);
 
-              <button
-                onClick={() => exportRowsToCSV(getApprovedData(), 'Lolos_Seleksi_BUKTY')}
-                className="btn-yellow py-2 px-4 text-xs"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Ekspor Peserta Lolos (CSV)</span>
-              </button>
-            </div>
+            const totalAssessedCount = allRanked.filter((r) => r.interviewEval.isAssessed).length;
+            const topQuotaList = allRanked.filter((r) => r.quotaCategory === 'TOP_QUOTA');
+            const cadanganList = allRanked.filter((r) => r.quotaCategory === 'CADANGAN');
+            const gugurList = allRanked.filter((r) => r.quotaCategory === 'GUGUR');
+            const belumWawancaraList = allRanked.filter((r) => !r.interviewEval.isAssessed);
 
-            <div className="bg-white border-[3px] border-[#111827] rounded-3xl shadow-[6px_6px_0px_#111827] overflow-hidden">
-              <div className="bg-[#EFF6FF] p-4 border-b-2 border-[#111827] flex items-center justify-between">
-                <h3 className="font-black text-sm flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-[#15803D]" />
-                  <span>Daftar Peserta Lolos Administrasi & Penerima Akhir ({getApprovedData().length})</span>
-                </h3>
-              </div>
+            const totalTopQuotaUkt = topQuotaList.reduce((acc, curr) => {
+              const val = parseInt(String(curr.nominal_ukt || '0').replace(/\D/g, ''), 10) || 0;
+              return acc + val;
+            }, 0);
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-[#FFFDF5] border-b-2 border-[#111827] text-gray-600 font-black uppercase text-[10px]">
-                      <th className="py-3 px-4 w-14 text-center border-r-2 border-[#111827]">No.</th>
-                      <th className="py-3 px-4 border-r-2 border-[#111827]">No. Reg</th>
-                      <th
-                        onClick={toggleApprovedNameSort}
-                        className="py-3 px-4 border-r-2 border-[#111827] cursor-pointer hover:bg-[#EFF6FF] select-none"
+            return (
+              <div className="space-y-4">
+                {/* 4 KPI Cards for Final Interview Ranking & Top 32 Quota */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-extrabold text-gray-500 uppercase">
+                        Kuota Utama Penerima (Top {recipientQuotaLimit})
+                      </p>
+                      <h3 className="text-2xl font-black text-[#15803D] font-heading mt-0.5">
+                        {topQuotaList.length} / {recipientQuotaLimit}
+                      </h3>
+                      <p className="text-[10px] font-bold text-gray-500 mt-0.5">
+                        Total UKT: Rp {(totalTopQuotaUkt / 1000000).toFixed(1)} Jt/Smt
+                      </p>
+                    </div>
+                    <div className="w-11 h-11 rounded-2xl bg-[#DCFCE7] text-[#15803D] border-2 border-[#111827] flex items-center justify-center shrink-0">
+                      <Trophy className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-extrabold text-gray-500 uppercase">
+                        Cadangan (Rank #{recipientQuotaLimit + 1}+)
+                      </p>
+                      <h3 className="text-2xl font-black text-amber-600 font-heading mt-0.5">{cadanganList.length}</h3>
+                      <p className="text-[10px] font-bold text-gray-500 mt-0.5">
+                        Memenuhi syarat namun di luar kuota {recipientQuotaLimit}
+                      </p>
+                    </div>
+                    <div className="w-11 h-11 rounded-2xl bg-[#FEF9C3] text-amber-700 border-2 border-[#111827] flex items-center justify-center shrink-0">
+                      <Clock className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-extrabold text-gray-500 uppercase">Total Sudah Diwawancara</p>
+                      <h3 className="text-2xl font-black text-[#1D4ED8] font-heading mt-0.5">
+                        {totalAssessedCount} <span className="text-xs text-gray-400">/ {registrations.length}</span>
+                      </h3>
+                      <p className="text-[10px] font-bold text-gray-500 mt-0.5">
+                        Belum diwawancara: {belumWawancaraList.length} pendaftar
+                      </p>
+                    </div>
+                    <div className="w-11 h-11 rounded-2xl bg-[#DBEAFE] text-[#1D4ED8] border-2 border-[#111827] flex items-center justify-center shrink-0">
+                      <ClipboardCheck className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-extrabold text-gray-500 uppercase">
+                        Gugur / Tidak Direkomendasikan
+                      </p>
+                      <h3 className="text-2xl font-black text-red-600 font-heading mt-0.5">{gugurList.length}</h3>
+                      <p className="text-[10px] font-bold text-gray-500 mt-0.5">
+                        Skor &lt; 60 atau Gugur Verifikasi Bagian 1
+                      </p>
+                    </div>
+                    <div className="w-11 h-11 rounded-2xl bg-red-100 text-red-600 border-2 border-[#111827] flex items-center justify-center shrink-0">
+                      <XCircle className="w-5 h-5" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Control Bar: Search, Category Filter, Quota Config, Auto-Apply Top 32, and Excel/CSV Export */}
+                <div className="bg-white border-[3px] border-[#111827] p-4 rounded-3xl shadow-[4px_4px_0px_#111827] space-y-3">
+                  <div className="flex flex-col xl:flex-row gap-3 items-stretch xl:items-center justify-between">
+                    {/* Left: Category Filter Pills */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        {
+                          key: 'ALL_ASSESSED',
+                          label: `Semua Hasil Wawancara (${totalAssessedCount})`,
+                        },
+                        {
+                          key: 'TOP_QUOTA',
+                          label: `🟢 Top ${recipientQuotaLimit} Penerima (${topQuotaList.length})`,
+                        },
+                        {
+                          key: 'CADANGAN',
+                          label: `🟡 Cadangan Rank ${recipientQuotaLimit + 1}+ (${cadanganList.length})`,
+                        },
+                        {
+                          key: 'GUGUR',
+                          label: `🔴 Tidak Direkomendasikan (${gugurList.length})`,
+                        },
+                        {
+                          key: 'ALL',
+                          label: `Seluruh Pendaftar (${allRanked.length})`,
+                        },
+                      ].map((tabItem) => (
+                        <button
+                          key={tabItem.key}
+                          type="button"
+                          onClick={() => setInterviewQuotaFilter(tabItem.key)}
+                          className={`px-3 py-1.5 rounded-xl border-2 text-[11px] font-black cursor-pointer transition-all ${
+                            interviewQuotaFilter === tabItem.key
+                              ? 'bg-[#1D4ED8] text-white border-[#111827] shadow-[2px_2px_0px_#111827]'
+                              : 'bg-[#FFFDF5] text-[#111827] border-[#111827]/40 hover:bg-[#EFF6FF]'
+                          }`}
+                        >
+                          {tabItem.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Right: Search & Quota Input */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1.5 bg-[#FEF9C3] border-2 border-[#111827] px-2.5 py-1.5 rounded-xl text-xs font-black">
+                        <span>Kuota Penerima:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={500}
+                          value={recipientQuotaLimit}
+                          onChange={(e) =>
+                            setRecipientQuotaLimit(Math.max(1, parseInt(e.target.value, 10) || BUKTY_RECIPIENT_QUOTA))
+                          }
+                          className="w-14 bg-white border border-[#111827] rounded-lg px-1.5 py-0.5 text-center font-mono-code font-black text-xs"
+                        />
+                      </div>
+
+                      <div className="relative flex-1 sm:w-64">
+                        <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Cari nama / kampus / reg..."
+                          value={approvedSearchQuery}
+                          onChange={(e) => setApprovedSearchQuery(e.target.value)}
+                          className="form-input pl-9 pr-3 py-1.5 text-xs font-bold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom Row: Auto-Assign Top 32 Action & Excel Export Buttons */}
+                  <div className="pt-2.5 border-t-2 border-dashed border-[#111827]/20 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleManualApplyTop32Quota}
+                        disabled={isApplyingQuota || totalAssessedCount === 0}
+                        className="px-4 py-2 rounded-xl bg-[#15803D] hover:bg-[#14532D] text-white border-2 border-[#111827] shadow-[3px_3px_0px_#111827] text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
                       >
-                        Nama Lengkap {approvedNameSort === 'asc' ? '▲' : approvedNameSort === 'desc' ? '▼' : '⇅'}
-                      </th>
-                      <th className="py-3 px-4 border-r-2 border-[#111827]">Kampus & Provinsi</th>
-                      <th className="py-3 px-4 border-r-2 border-[#111827]">Status Ortu / Skor</th>
-                      <th className="py-3 px-4 text-center">Status & Promosi Pantukhir</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
-                    {getApprovedData().length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-12 text-center text-gray-500 font-bold">
-                          Belum ada pendaftar yang berstatus Lolos Administrasi atau Diterima.
-                        </td>
-                      </tr>
-                    ) : (
-                      getApprovedData().map((item, index) => (
-                        <tr key={item.id} className="hover:bg-[#EFF6FF]/40 font-bold">
-                          <td className="py-3 px-4 text-center border-r border-gray-200 font-mono-code text-gray-400">
-                            {index + 1}
-                          </td>
-                          <td className="py-3 px-4 border-r border-gray-200 font-mono-code text-[#1D4ED8] font-black">
-                            {item.reg_id}
-                          </td>
-                          <td className="py-3 px-4 border-r border-gray-200 uppercase font-black">{item.nama}</td>
-                          <td className="py-3 px-4 border-r border-gray-200">
-                            <div>{item.perguruan_tinggi}</div>
-                            <div className="text-[10px] text-gray-500">{item.provinsi}</div>
-                          </td>
-                          <td className="py-3 px-4 border-r border-gray-200">
-                            <span className="px-1.5 py-0.5 rounded bg-[#FEF9C3] border border-[#111827] text-[10px] font-black mr-2">
-                              {item.status_yatim}
-                            </span>
-                            <span className="font-mono-code font-black text-[#1D4ED8]">{item.score_total}</span>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            {item.status_seleksi === 'Diterima' ? (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black bg-[#DBEAFE] text-[#1D4ED8] border-2 border-[#1D4ED8]">
-                                <Trophy className="w-3 h-3" />
-                                <span>Diterima (Pantukhir)</span>
-                              </span>
-                            ) : (
-                              <button
-                                onClick={() => handleUpdateStatus(item.id, 'Diterima')}
-                                className="px-3 py-1.5 rounded-xl bg-[#FFD60A] hover:bg-[#1D4ED8] hover:text-white border-2 border-[#111827] text-[10px] font-black transition-colors cursor-pointer"
-                              >
-                                Tetapkan Diterima (Pantukhir)
-                              </button>
-                            )}
-                          </td>
+                        <Zap className="w-4 h-4 text-[#FFD60A]" />
+                        <span>
+                          {isApplyingQuota
+                            ? 'Menetapkan Kuota...'
+                            : `Tetapkan Otomatis Top ${recipientQuotaLimit} Nilai Tertinggi = Diterima (Penerima BUKTY)`}
+                        </span>
+                      </button>
+                      <span className="text-[11px] font-bold text-gray-600">
+                        Otomatis mengurutkan nilai wawancara tertinggi: <strong>Rank 1–{recipientQuotaLimit}</strong> ={' '}
+                        <span className="text-[#15803D] font-black">Diterima</span>,{' '}
+                        <strong>Rank {recipientQuotaLimit + 1}+</strong> ={' '}
+                        <span className="text-amber-700 font-black">Cadangan</span>.
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => exportInterviewToExcel(filteredRanked, 'Ranking_Wawancara_BUKTY')}
+                        className="px-4 py-2 rounded-xl bg-[#FFD60A] hover:bg-[#1D4ED8] text-[#111827] hover:text-white border-2 border-[#111827] shadow-[3px_3px_0px_#111827] text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        <FileSpreadsheet className="w-4 h-4" />
+                        <span>Ekspor Excel Hasil Wawancara (.xls)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => exportRowsToCSV(filteredRanked, 'Ranking_Wawancara_BUKTY')}
+                        className="btn-secondary py-2 px-3.5 text-xs"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Ekspor CSV</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Final Interview Ranking Table */}
+                <div className="bg-white border-[3px] border-[#111827] rounded-3xl shadow-[6px_6px_0px_#111827] overflow-hidden">
+                  <div className="bg-[#EFF6FF] p-3.5 border-b-2 border-[#111827] flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-black text-sm flex items-center gap-2">
+                      <Award className="w-4 h-4 text-[#1D4ED8]" />
+                      <span>
+                        Tabel Ranking Hasil Akhir Wawancara & Penetapan Penerima Bantuan UKT Yatim (
+                        {filteredRanked.length} Kandidat)
+                      </span>
+                    </h3>
+                    <span className="text-[11px] font-extrabold text-[#1E3A8A]">
+                      Urutan Ranking: Kelayakan Bagian 1 → Total Skor Wawancara (0–100) → Skor Ekonomi (40%) → Skor
+                      BUKTY
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-[#FFFDF5] border-b-2 border-[#111827] text-gray-700 font-black uppercase text-[10px]">
+                          <th className="py-3 px-3 w-20 text-center border-r-2 border-[#111827]">Rank WWC</th>
+                          <th
+                            onClick={toggleApprovedNameSort}
+                            className="py-3 px-3.5 border-r-2 border-[#111827] cursor-pointer hover:bg-[#EFF6FF] select-none"
+                          >
+                            Mahasiswa & No. Reg{' '}
+                            {approvedNameSort === 'asc' ? '▲' : approvedNameSort === 'desc' ? '▼' : '⇅'}
+                          </th>
+                          <th className="py-3 px-3.5 border-r-2 border-[#111827]">Kampus, UKT & Status Bayar</th>
+                          <th className="py-3 px-3 text-center border-r-2 border-[#111827]">
+                            Verifikasi Bagian 1 (8 Poin)
+                          </th>
+                          <th className="py-3 px-3 text-center border-r-2 border-[#111827]">
+                            Rincian Skor Bagian 2 (1–4)
+                          </th>
+                          <th className="py-3 px-3 text-center border-r-2 border-[#111827]">
+                            Nilai Akhir Wawancara
+                          </th>
+                          <th className="py-3 px-3.5 text-center">Status Kuota {recipientQuotaLimit} & Aksi</th>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 bg-white">
+                        {filteredRanked.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="py-12 text-center text-gray-500 font-bold">
+                              Belum ada data kandidat pada filter hasil wawancara ini. Silakan isi penilaian wawancara
+                              di tab <strong>Leaderboard & Wawancara</strong>.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredRanked.map((item, idx) => {
+                            const ev = item.interviewEval;
+                            const parsed = item.parsedInterview;
+                            const isExactQuotaBoundary =
+                              approvedNameSort === 'default' &&
+                              item.eligibleRank === recipientQuotaLimit &&
+                              idx < filteredRanked.length - 1;
+
+                            let rowBgClass = 'hover:bg-[#EFF6FF]/40';
+                            if (item.quotaCategory === 'TOP_QUOTA') {
+                              rowBgClass = 'bg-[#DCFCE7]/25 hover:bg-[#DCFCE7]/50';
+                            } else if (item.quotaCategory === 'CADANGAN') {
+                              rowBgClass = 'bg-[#FEF9C3]/25 hover:bg-[#FEF9C3]/50';
+                            } else if (item.quotaCategory === 'GUGUR') {
+                              rowBgClass = 'bg-red-50/40 hover:bg-red-50';
+                            }
+
+                            return (
+                              <React.Fragment key={item.id}>
+                                <tr className={`${rowBgClass} font-bold transition-colors`}>
+                                  {/* Column 1: Interview Rank */}
+                                  <td className="py-3 px-3 text-center border-r border-gray-200">
+                                    {item.quotaCategory === 'TOP_QUOTA' ? (
+                                      <div className="inline-flex flex-col items-center">
+                                        <span className="w-8 h-8 rounded-xl bg-[#15803D] text-white border-2 border-[#111827] font-mono-code font-black text-xs flex items-center justify-center shadow-[2px_2px_0px_#111827]">
+                                          #{item.eligibleRank}
+                                        </span>
+                                        <span className="text-[8.5px] font-black text-[#15803D] uppercase mt-1">
+                                          TOP {recipientQuotaLimit}
+                                        </span>
+                                      </div>
+                                    ) : item.quotaCategory === 'CADANGAN' ? (
+                                      <div className="inline-flex flex-col items-center">
+                                        <span className="w-8 h-8 rounded-xl bg-[#FEF9C3] text-amber-900 border-2 border-[#111827] font-mono-code font-black text-xs flex items-center justify-center">
+                                          #{item.eligibleRank}
+                                        </span>
+                                        <span className="text-[8.5px] font-black text-amber-700 uppercase mt-1">
+                                          CAD #{item.waitingListNumber}
+                                        </span>
+                                      </div>
+                                    ) : item.quotaCategory === 'GUGUR' ? (
+                                      <div className="inline-flex flex-col items-center">
+                                        <span className="px-2 py-1 rounded-lg bg-red-100 text-red-700 border border-red-500 font-mono-code font-black text-[10px]">
+                                          GUGUR
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-gray-400">Belum</span>
+                                    )}
+                                  </td>
+
+                                  {/* Column 2: Candidate Identity */}
+                                  <td className="py-3 px-3.5 border-r border-gray-200">
+                                    <div className="font-black uppercase text-xs text-[#111827]">{item.nama}</div>
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                      <span className="font-mono-code text-[10px] font-black text-[#1D4ED8]">
+                                        {item.reg_id}
+                                      </span>
+                                      <span className="px-1.5 py-0.5 rounded bg-[#FEF9C3] border border-[#111827] text-[9px] font-black">
+                                        {item.status_yatim}
+                                      </span>
+                                      <span className="text-[10px] text-gray-500">IPK: {item.ipk}</span>
+                                    </div>
+                                    {item.catatan_admin && (
+                                      <p className="text-[10px] text-gray-600 italic mt-1 line-clamp-2">
+                                        "{item.catatan_admin}"
+                                      </p>
+                                    )}
+                                  </td>
+
+                                  {/* Column 3: Campus, UKT & Payment Status */}
+                                  <td className="py-3 px-3.5 border-r border-gray-200">
+                                    <div className="font-black text-[11px]">{item.perguruan_tinggi}</div>
+                                    <div className="text-[10px] text-gray-500">
+                                      {item.fakultas_prodi} ({item.jenjang}-Sem {item.semester}) • {item.provinsi}
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                      <span className="font-black text-[#15803D] text-[11px]">
+                                        UKT: Rp {item.nominal_ukt}
+                                      </span>
+                                      {parsed.uktPaymentStatus && (
+                                        <span className="px-1.5 py-0.5 rounded bg-[#DBEAFE] text-[#1D4ED8] border border-[#1D4ED8] text-[9px] font-black">
+                                          {parsed.uktPaymentStatus} BAYAR
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Column 4: Bagian 1 Verification */}
+                                  <td className="py-3 px-3 text-center border-r border-gray-200">
+                                    {ev.isVerificationFailed ? (
+                                      <div className="space-y-1">
+                                        <span className="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-500 text-[9.5px] font-black">
+                                          GUGUR ({ev.failedCount} Poin)
+                                        </span>
+                                        <div className="text-[9px] text-red-600 font-bold max-w-[160px] mx-auto leading-tight">
+                                          {ev.failedItems.join(', ')}
+                                        </div>
+                                      </div>
+                                    ) : ev.verifiedCount > 0 ? (
+                                      <span className="inline-block px-2 py-0.5 rounded bg-[#DCFCE7] text-[#15803D] border border-[#15803D] text-[10px] font-black">
+                                        ✓ LOLOS ({ev.passedCount}/{INTERVIEW_VERIFICATION_ITEMS.length})
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-gray-400">Belum Dicek</span>
+                                    )}
+                                  </td>
+
+                                  {/* Column 5: Bagian 2 Indicator Breakdown */}
+                                  <td className="py-3 px-3 text-center border-r border-gray-200">
+                                    {ev.scoredIndicatorsCount > 0 ? (
+                                      <div className="grid grid-cols-2 gap-1 text-[9.5px] font-mono-code max-w-[190px] mx-auto">
+                                        <span className="px-1.5 py-0.5 rounded bg-white border border-gray-300">
+                                          Eko(40%): <strong>{parsed.scores?.kondisi_ekonomi || 0}/4</strong>
+                                        </span>
+                                        <span className="px-1.5 py-0.5 rounded bg-white border border-gray-300">
+                                          Mot(20%): <strong>{parsed.scores?.motivasi_studi || 0}/4</strong>
+                                        </span>
+                                        <span className="px-1.5 py-0.5 rounded bg-white border border-gray-300">
+                                          Esai(20%): <strong>{parsed.scores?.konsistensi_esai || 0}/4</strong>
+                                        </span>
+                                        <span className="px-1.5 py-0.5 rounded bg-white border border-gray-300">
+                                          Sikap(20%): <strong>{parsed.scores?.sikap_komunikasi || 0}/4</strong>
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] text-gray-400">Belum Dinilai</span>
+                                    )}
+                                  </td>
+
+                                  {/* Column 6: Total Final Interview Score */}
+                                  <td className="py-3 px-3 text-center border-r border-gray-200">
+                                    {ev.scoredIndicatorsCount > 0 ? (
+                                      <div>
+                                        <div className="text-base font-black font-mono-code text-[#111827]">
+                                          {ev.totalWeightedScore}
+                                          <span className="text-[10px] text-gray-400">/100</span>
+                                        </div>
+                                        <div className="text-[9px] text-gray-500 font-mono-code mt-0.5">
+                                          Skor BUKTY: {item.score_total}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="text-[10px] text-gray-400">
+                                        Skor BUKTY: <strong className="text-[#1D4ED8]">{item.score_total}</strong>
+                                      </div>
+                                    )}
+                                  </td>
+
+                                  {/* Column 7: Quota Status & Quick Actions */}
+                                  <td className="py-3 px-3.5 text-center">
+                                    <div className="flex flex-col items-center gap-1.5">
+                                      {item.quotaCategory === 'TOP_QUOTA' ? (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9.5px] font-black bg-[#DCFCE7] text-[#15803D] border-2 border-[#15803D]">
+                                          <Trophy className="w-3 h-3" />
+                                          <span>OTOMATIS DITERIMA (TOP {recipientQuotaLimit})</span>
+                                        </span>
+                                      ) : item.quotaCategory === 'CADANGAN' ? (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9.5px] font-black bg-[#FEF9C3] text-amber-800 border-2 border-amber-500">
+                                          <span>CADANGAN #{item.waitingListNumber}</span>
+                                        </span>
+                                      ) : item.quotaCategory === 'GUGUR' ? (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9.5px] font-black bg-red-100 text-red-700 border-2 border-red-500">
+                                          <span>TIDAK DIREKOMENDASIKAN</span>
+                                        </span>
+                                      ) : null}
+
+                                      <div className="flex items-center gap-1.5">
+                                        <select
+                                          value={item.status_seleksi || 'Pending'}
+                                          onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
+                                          className={`px-2 py-1 rounded-lg font-extrabold text-[10px] outline-none cursor-pointer border ${
+                                            item.status_seleksi === 'Diterima'
+                                              ? 'bg-[#DBEAFE] text-[#1D4ED8] border-[#1D4ED8]'
+                                              : item.status_seleksi === 'Lolos Administrasi'
+                                              ? 'bg-[#DCFCE7] text-[#15803D] border-[#15803D]'
+                                              : item.status_seleksi === 'Tidak Lolos'
+                                              ? 'bg-red-100 text-red-700 border-red-500'
+                                              : 'bg-gray-100 text-gray-700 border-gray-400'
+                                          }`}
+                                        >
+                                          <option value="Pending">Status: Pending</option>
+                                          <option value="Lolos Administrasi">Status: Cadangan / Lolos Admin</option>
+                                          <option value="Diterima">Status: Diterima (Pantukhir)</option>
+                                          <option value="Tidak Lolos">Status: Tidak Lolos</option>
+                                        </select>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            handleSelectRankItem(item);
+                                            setActiveTab('leaderboard');
+                                          }}
+                                          className="px-2 py-1 rounded-lg bg-white hover:bg-[#FFD60A] border border-[#111827] text-[9.5px] font-black cursor-pointer"
+                                          title="Buka atau Edit Form Wawancara Kandidat Ini"
+                                        >
+                                          Edit WWC
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {/* Visual Quota Cutoff Boundary Line after Rank #32 */}
+                                {isExactQuotaBoundary && (
+                                  <tr className="bg-[#111827] text-[#FFD60A]">
+                                    <td colSpan={7} className="py-2 px-4 text-center font-black text-[10.5px] uppercase tracking-wider">
+                                      ▲ BATAS KUOTA UTAMA {recipientQuotaLimit} PENERIMA BANTUAN UKT YATIM (PERINGKAT 1 –{' '}
+                                      {recipientQuotaLimit} OTOMATIS DITERIMA) • DI BAWAH GARIS INI ADALAH DAFTAR
+                                      CADANGAN ▼
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
+            );
+          })()}
 
         {/* TAB 4: JADWAL TIMELINE, PENGUMUMAN & PANTUKHIR CONFIG */}
         {activeTab === 'announcement' && (

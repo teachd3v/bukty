@@ -712,3 +712,121 @@ export function calculateInterviewEvaluation(interviewState) {
   };
 }
 
+export const BUKTY_RECIPIENT_QUOTA = 32;
+
+// Final Interview Ranking Engine with Top 32 Automatic Recipient Quota
+export function rankInterviewCandidates(registrations = [], quota = BUKTY_RECIPIENT_QUOTA) {
+  const safeQuota = Math.max(1, parseInt(quota, 10) || BUKTY_RECIPIENT_QUOTA);
+
+  const enriched = registrations.map((r) => {
+    const buktyScores = calculateBuktyScores(r);
+    const parsedInterview = parseInterviewJson(r.interview_json);
+    const interviewEval = calculateInterviewEvaluation(parsedInterview);
+    const eligibility = checkBuktyEligibility(r);
+
+    // A candidate is eligible for the final Top 32 recipient ranking if:
+    // 1. They have been assessed in the interview (scoredIndicatorsCount > 0)
+    // 2. They did NOT fail any quick verification item in Bagian 1 (!isVerificationFailed)
+    // 3. Their weighted interview score is >= 60 (Direkomendasikan >= 75 or Cadangan 60-74)
+    const isEligibleForQuota =
+      interviewEval.scoredIndicatorsCount > 0 &&
+      !interviewEval.isVerificationFailed &&
+      interviewEval.totalWeightedScore >= 60;
+
+    const economyScore = Number(parsedInterview.scores?.kondisi_ekonomi) || 0;
+    const motivationScore = Number(parsedInterview.scores?.motivasi_studi) || 0;
+    const essayScore = Number(parsedInterview.scores?.konsistensi_esai) || 0;
+    const attitudeScore = Number(parsedInterview.scores?.sikap_komunikasi) || 0;
+
+    return {
+      ...r,
+      ...buktyScores,
+      eligibility,
+      parsedInterview,
+      interviewEval,
+      isEligibleForQuota,
+      economyScore,
+      motivationScore,
+      essayScore,
+      attitudeScore,
+    };
+  });
+
+  // Sort order:
+  // 1. Eligible for Quota (Lolos Bagian 1 & Skor >= 60) first
+  // 2. Assessed but Gugur (<60 or Failed Bagian 1) second
+  // 3. Not yet interviewed third
+  // Within groups:
+  // - Higher Total Weighted Interview Score (0 - 100)
+  // - Higher Economy Indicator Score (Bobot 40% priority)
+  // - Higher BUKTY Admin Score (score_total)
+  // - Higher Yatim Score & Raw Ratio
+  const sorted = [...enriched].sort((a, b) => {
+    const tierA = a.isEligibleForQuota ? 3 : a.interviewEval.isAssessed ? 2 : 1;
+    const tierB = b.isEligibleForQuota ? 3 : b.interviewEval.isAssessed ? 2 : 1;
+    if (tierB !== tierA) return tierB - tierA;
+
+    if (b.interviewEval.totalWeightedScore !== a.interviewEval.totalWeightedScore) {
+      return b.interviewEval.totalWeightedScore - a.interviewEval.totalWeightedScore;
+    }
+    if (b.economyScore !== a.economyScore) return b.economyScore - a.economyScore;
+    if (b.score_total !== a.score_total) return b.score_total - a.score_total;
+    if (b.score_yatim !== a.score_yatim) return b.score_yatim - a.score_yatim;
+    if (b.raw_ratio !== a.raw_ratio) return b.raw_ratio - a.raw_ratio;
+    return a.id - b.id;
+  });
+
+  let eligibleRankCounter = 0;
+  let overallAssessedRankCounter = 0;
+
+  return sorted.map((item) => {
+    let interviewRank = null;
+    let eligibleRank = null;
+    let isTopQuotaRecipient = false;
+    let waitingListNumber = null;
+    let quotaCategory = 'BELUM_WAWANCARA'; // 'TOP_QUOTA' | 'CADANGAN' | 'GUGUR' | 'BELUM_WAWANCARA'
+    let quotaLabel = 'Belum Diwawancara';
+    let autoTargetStatus = item.status_seleksi || 'Pending';
+
+    if (item.interviewEval.isAssessed) {
+      overallAssessedRankCounter += 1;
+      interviewRank = overallAssessedRankCounter;
+
+      if (item.isEligibleForQuota) {
+        eligibleRankCounter += 1;
+        eligibleRank = eligibleRankCounter;
+
+        if (eligibleRankCounter <= safeQuota) {
+          isTopQuotaRecipient = true;
+          quotaCategory = 'TOP_QUOTA';
+          quotaLabel = `PENERIMA BUKTY (TOP ${safeQuota} • #${eligibleRankCounter})`;
+          autoTargetStatus = 'Diterima';
+        } else {
+          waitingListNumber = eligibleRankCounter - safeQuota;
+          quotaCategory = 'CADANGAN';
+          quotaLabel = `CADANGAN #${waitingListNumber} (Rank #${eligibleRankCounter})`;
+          autoTargetStatus = 'Lolos Administrasi';
+        }
+      } else {
+        quotaCategory = 'GUGUR';
+        quotaLabel = item.interviewEval.isVerificationFailed
+          ? 'TIDAK DIREKOMENDASIKAN (Gugur Verifikasi)'
+          : 'TIDAK DIREKOMENDASIKAN (Skor < 60)';
+        autoTargetStatus = 'Tidak Lolos';
+      }
+    }
+
+    return {
+      ...item,
+      interviewRank,
+      eligibleRank,
+      isTopQuotaRecipient,
+      waitingListNumber,
+      quotaCategory,
+      quotaLabel,
+      autoTargetStatus,
+    };
+  });
+}
+
+

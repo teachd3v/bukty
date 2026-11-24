@@ -124,6 +124,32 @@ export async function onRequestGet({ request, env }) {
 export async function onRequestPatch({ request, env }) {
   try {
     const body = await request.json();
+
+    // Mode A: Batch Status Updates (e.g. Auto-Assign Top 32 Interview Recipients)
+    if (Array.isArray(body.updates) && body.updates.length > 0) {
+      if (env && env.DB) {
+        const statements = body.updates
+          .filter((u) => u && u.id && u.status_seleksi)
+          .map((u) =>
+            env.DB.prepare(`UPDATE registrations SET status_seleksi = ? WHERE id = ?`).bind(
+              u.status_seleksi,
+              u.id
+            )
+          );
+        if (statements.length > 0) {
+          await env.DB.batch(statements);
+        }
+      }
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: `${body.updates.length} status penerima BUKTY berhasil diperbarui secara otomatis`,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Mode B: Single Candidate Update (Status, Catatan, Interview JSON)
     const { id, status_seleksi, catatan_admin, interview_json } = body;
 
     if (!id || !status_seleksi) {
