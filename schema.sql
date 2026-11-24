@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS registrations (
   -- E. Dokumen & Status Seleksi
   uploaded_files_json TEXT,
   status_seleksi TEXT DEFAULT 'Pending',
-  catatan_admin TEXT
+  catatan_admin TEXT,
+  interview_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS announcements (

@@ -373,3 +373,342 @@ export function calculateBuktyScores(r) {
     raw_tanggungan: tanggungan,
   };
 }
+
+// ============================================================================
+// BUKTY INTERVIEW RUBRIC & SCORING ENGINE
+// ============================================================================
+
+// Bagian 1 - Verifikasi Dokumen & Kelayakan Akhir (8 Poin)
+export const INTERVIEW_VERIFICATION_ITEMS = [
+  {
+    key: 'identitas_kampus',
+    no: 1,
+    title: 'Identitas & Kampus',
+    howToVerify: 'Konfirmasi ulang sesuai dengan KTP/KTM',
+    docKeys: ['ktp', 'ktm'],
+  },
+  {
+    key: 'status_yatim',
+    no: 2,
+    title: 'Status Orang Tua (Yatim)',
+    howToVerify: 'Konfirmasi apakah yatim/bukan',
+    docKeys: ['suratYatim', 'kk'],
+  },
+  {
+    key: 'agama_islam',
+    no: 3,
+    title: 'Agama (Islam)',
+    howToVerify: 'Cocokkan kolom agama pada KTP dengan isian form pendaftaran',
+    docKeys: ['ktp'],
+  },
+  {
+    key: 'jenjang_mahasiswa',
+    no: 4,
+    title: 'Jenjang Mahasiswa (S1/D4)',
+    howToVerify: 'Cek KTM/Surat Keterangan Aktif Kuliah, pastikan jenjang sesuai cakupan program (S1 atau D4)',
+    docKeys: ['ktm', 'krs'],
+  },
+  {
+    key: 'foto_rumah',
+    no: 5,
+    title: 'Foto Rumah',
+    howToVerify: 'Minta tunjukkan ulang/konfirmasi foto rumah (tampak depan, ruang tamu, samping) yang telah diunggah, cocokkan dengan cerita kondisi ekonomi',
+    docKeys: ['rumahDepan', 'rumahTamu', 'rumahSamping'],
+  },
+  {
+    key: 'sktm',
+    no: 6,
+    title: 'SKTM (Surat Keterangan Tidak Mampu)',
+    howToVerify: 'Cek keaslian SKTM: nama sesuai, ada tanda tangan & cap kelurahan/desa',
+    docKeys: ['sktm'],
+  },
+  {
+    key: 'slip_ukt',
+    no: 7,
+    title: 'Slip UKT Semester Ganjil / Bukti Pembayaran',
+    howToVerify: 'Cek slip UKT atau bukti transfer; sekaligus pastikan status: SUDAH atau BELUM membayar UKT semester berjalan',
+    docKeys: ['slipUkt'],
+    hasUktPaymentStatus: true,
+  },
+  {
+    key: 'kesan_kejujuran',
+    no: 8,
+    title: 'Kesan Umum Kejujuran',
+    howToVerify: 'Perhatikan apakah jawaban lancar/konsisten atau ragu-ragu & berubah-ubah',
+    docKeys: [],
+  },
+];
+
+// Bagian 2 - Penilaian Terbobot dengan Skala Indikator 1-4
+export const INTERVIEW_SCORING_RUBRIC = [
+  {
+    key: 'kondisi_ekonomi',
+    no: 1,
+    title: 'Kondisi Ekonomi Keluarga — PRIORITAS UTAMA',
+    weight: 40,
+    badge: 'Bobot 40% • Prioritas Utama',
+    questions: [
+      'Ceritakan kondisi keluarga (Yatim/Non Yatim). Kemudian ceritakan pekerjaan & penghasilan Ibu saat ini.',
+      'Apa tantangan finansial terbesar keluarga sekarang?',
+    ],
+    docKeys: ['rumahDepan', 'sktm', 'kk'],
+    options: [
+      {
+        score: 1,
+        label: 'Kurang',
+        desc: 'Jawaban tidak konsisten dengan form / kondisi terkesan cukup mampu.',
+      },
+      {
+        score: 2,
+        label: 'Cukup',
+        desc: 'Jawaban konsisten, namun kondisi ekonomi tergolong menengah, tidak terlalu berat.',
+      },
+      {
+        score: 3,
+        label: 'Baik',
+        desc: 'Jawaban konsisten, kondisi ekonomi cukup terbatas/pas-pasan.',
+      },
+      {
+        score: 4,
+        label: 'Sangat Baik',
+        desc: 'Jawaban konsisten & jelas menggambarkan kondisi pra sejahtera.',
+      },
+    ],
+  },
+  {
+    key: 'motivasi_studi',
+    no: 2,
+    title: 'Motivasi & Kesungguhan Studi',
+    weight: 20,
+    badge: 'Bobot 20%',
+    questions: [
+      'Kenapa bantuan ini penting buat kamu?',
+      'Apa rencana kamu setelah dapat bantuan ini?',
+    ],
+    docKeys: ['khs', 'bio'],
+    options: [
+      {
+        score: 1,
+        label: 'Kurang',
+        desc: 'Jawaban generik, tidak personal, tidak meyakinkan.',
+      },
+      {
+        score: 2,
+        label: 'Cukup',
+        desc: 'Jawaban cukup personal, namun kurang spesifik & rencana belum jelas.',
+      },
+      {
+        score: 3,
+        label: 'Baik',
+        desc: 'Jawaban personal dan cukup jelas, rencana studi masuk akal.',
+      },
+      {
+        score: 4,
+        label: 'Sangat Baik',
+        desc: 'Jawaban personal, spesifik, menunjukkan rencana & tekad yang jelas.',
+      },
+    ],
+  },
+  {
+    key: 'konsistensi_esai',
+    no: 3,
+    title: 'Konsistensi dengan Esai & Data Pendaftaran',
+    weight: 20,
+    badge: 'Bobot 20%',
+    questions: [
+      'Coba ceritakan ulang inti dari esai yang kamu tulis.',
+    ],
+    docKeys: ['esai'],
+    options: [
+      {
+        score: 1,
+        label: 'Kurang',
+        desc: 'Cerita tidak nyambung / bertentangan dengan esai & form.',
+      },
+      {
+        score: 2,
+        label: 'Cukup',
+        desc: 'Cerita sebagian sesuai, ada beberapa detail yang berbeda/kurang jelas.',
+      },
+      {
+        score: 3,
+        label: 'Baik',
+        desc: 'Cerita cukup sesuai dan mendukung isi esai & form.',
+      },
+      {
+        score: 4,
+        label: 'Sangat Baik',
+        desc: 'Cerita selaras dan memperkuat isi esai & form.',
+      },
+    ],
+  },
+  {
+    key: 'sikap_komunikasi',
+    no: 4,
+    title: 'Sikap, Komunikasi & Kejujuran',
+    weight: 20,
+    badge: 'Bobot 20%',
+    questions: [
+      'Observasi sepanjang sesi, tidak perlu pertanyaan khusus.',
+    ],
+    docKeys: [],
+    options: [
+      {
+        score: 1,
+        label: 'Kurang',
+        desc: 'Kurang sopan, defensif, atau jawaban terkesan dihafal/dibuat-buat.',
+      },
+      {
+        score: 2,
+        label: 'Cukup',
+        desc: 'Cukup sopan namun kurang komunikatif / agak kaku.',
+      },
+      {
+        score: 3,
+        label: 'Baik',
+        desc: 'Sopan dan komunikatif, jawaban terasa cukup natural.',
+      },
+      {
+        score: 4,
+        label: 'Sangat Baik',
+        desc: 'Sopan, komunikatif, jawaban terasa jujur & natural.',
+      },
+    ],
+  },
+];
+
+export function createDefaultInterviewState() {
+  const verifications = {};
+  INTERVIEW_VERIFICATION_ITEMS.forEach((item) => {
+    verifications[item.key] = null; // 'pass' | 'fail' | null
+  });
+
+  const scores = {};
+  INTERVIEW_SCORING_RUBRIC.forEach((item) => {
+    scores[item.key] = 0; // 1 | 2 | 3 | 4 | 0
+  });
+
+  return {
+    verifications,
+    uktPaymentStatus: '', // 'SUDAH' | 'BELUM' | ''
+    scores,
+    interviewerName: '',
+    notes: '',
+    updatedAt: null,
+  };
+}
+
+export function parseInterviewJson(rawJson) {
+  const base = createDefaultInterviewState();
+  if (!rawJson) return base;
+  try {
+    const parsed = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
+    if (!parsed || typeof parsed !== 'object') return base;
+    return {
+      verifications: { ...base.verifications, ...(parsed.verifications || {}) },
+      uktPaymentStatus: parsed.uktPaymentStatus || '',
+      scores: { ...base.scores, ...(parsed.scores || {}) },
+      interviewerName: parsed.interviewerName || '',
+      notes: parsed.notes || '',
+      updatedAt: parsed.updatedAt || null,
+    };
+  } catch (e) {
+    return base;
+  }
+}
+
+export function calculateInterviewEvaluation(interviewState) {
+  const state = parseInterviewJson(interviewState);
+
+  let verifiedCount = 0;
+  let passedCount = 0;
+  let failedCount = 0;
+  const failedItems = [];
+
+  INTERVIEW_VERIFICATION_ITEMS.forEach((item) => {
+    const val = state.verifications?.[item.key];
+    if (val === 'pass') {
+      verifiedCount += 1;
+      passedCount += 1;
+    } else if (val === 'fail') {
+      verifiedCount += 1;
+      failedCount += 1;
+      failedItems.push(item.title);
+    }
+  });
+
+  let scoredIndicatorsCount = 0;
+  let totalWeightedScore = 0;
+  const breakdown = {};
+
+  INTERVIEW_SCORING_RUBRIC.forEach((item) => {
+    const rawScore = Number(state.scores?.[item.key]) || 0;
+    if (rawScore >= 1 && rawScore <= 4) {
+      scoredIndicatorsCount += 1;
+      const weighted = (rawScore / 4) * item.weight;
+      totalWeightedScore += weighted;
+      breakdown[item.key] = {
+        raw: rawScore,
+        weighted: parseFloat(weighted.toFixed(2)),
+        maxWeight: item.weight,
+      };
+    } else {
+      breakdown[item.key] = {
+        raw: 0,
+        weighted: 0,
+        maxWeight: item.weight,
+      };
+    }
+  });
+
+  totalWeightedScore = parseFloat(totalWeightedScore.toFixed(2));
+  const isVerificationFailed = failedCount > 0;
+  const isAllVerified = verifiedCount === INTERVIEW_VERIFICATION_ITEMS.length;
+  const isAllScored = scoredIndicatorsCount === INTERVIEW_SCORING_RUBRIC.length;
+  const isAssessed = verifiedCount > 0 || scoredIndicatorsCount > 0;
+  const isComplete = isAllVerified && isAllScored;
+
+  let recommendation = 'BELUM LENGKAP';
+  let recommendationDesc = 'Lengkapi verifikasi Bagian 1 & skor Bagian 2 untuk melihat hasil akhir.';
+  let recommendationColor = 'gray';
+
+  if (isVerificationFailed) {
+    recommendation = 'TIDAK DIREKOMENDASIKAN';
+    recommendationDesc = `GUGUR di Verifikasi Cepat (${failedItems.join(', ')})`;
+    recommendationColor = 'red';
+  } else if (scoredIndicatorsCount > 0) {
+    if (totalWeightedScore >= 75) {
+      recommendation = 'DIREKOMENDASIKAN';
+      recommendationDesc = 'Direkomendasikan sebagai penerima Bantuan UKT Merdeka (Skor ≥ 75 & Lolos Verifikasi)';
+      recommendationColor = 'green';
+    } else if (totalWeightedScore >= 60) {
+      recommendation = 'CADANGAN';
+      recommendationDesc = 'Dipertimbangkan sebagai Cadangan jika kuota belum terpenuhi (Skor 60 – 74)';
+      recommendationColor = 'amber';
+    } else {
+      recommendation = 'TIDAK DIREKOMENDASIKAN';
+      recommendationDesc = 'Total Skor Tertimbang di bawah ambang batas (< 60)';
+      recommendationColor = 'red';
+    }
+  }
+
+  return {
+    verifiedCount,
+    passedCount,
+    failedCount,
+    failedItems,
+    isVerificationFailed,
+    isAllVerified,
+    scoredIndicatorsCount,
+    isAllScored,
+    isAssessed,
+    isComplete,
+    totalWeightedScore,
+    breakdown,
+    uktPaymentStatus: state.uktPaymentStatus || '',
+    recommendation,
+    recommendationDesc,
+    recommendationColor,
+  };
+}
+

@@ -22,6 +22,11 @@ import {
   ExternalLink,
   Calendar,
   RotateCcw,
+  ClipboardCheck,
+  Award,
+  Check,
+  XCircle,
+  HelpCircle,
 } from 'lucide-react';
 import {
   calculateBuktyScores,
@@ -33,6 +38,11 @@ import {
   formatShortDateRangeId,
   toDatetimeLocalValue,
   toWibIso,
+  INTERVIEW_VERIFICATION_ITEMS,
+  INTERVIEW_SCORING_RUBRIC,
+  createDefaultInterviewState,
+  parseInterviewJson,
+  calculateInterviewEvaluation,
 } from '../utils/buktyConfig';
 
 const SESSION_KEY = 'bukty_admin_session';
@@ -109,6 +119,9 @@ export default function AdminDashboard({ onLeaveAdmin }) {
   const [onlyQualifiedLeaderboard, setOnlyQualifiedLeaderboard] = useState(true);
   const [selectedLeaderboardItem, setSelectedLeaderboardItem] = useState(null);
   const [activeDocKey, setActiveDocKey] = useState(null);
+  const [middlePanelMode, setMiddlePanelMode] = useState('detail'); // 'detail' | 'docs'
+  const [interviewSectionTab, setInterviewSectionTab] = useState('all'); // 'all' | 'bagian1' | 'bagian2'
+  const [interviewForm, setInterviewForm] = useState(() => createDefaultInterviewState());
   const [savingStatus, setSavingStatus] = useState(false);
   const [leaderboardComment, setLeaderboardComment] = useState('');
   const [leaderboardStatus, setLeaderboardStatus] = useState('Pending');
@@ -220,12 +233,23 @@ export default function AdminDashboard({ onLeaveAdmin }) {
       'Kondisi Pekerjaan', 'Status Rumah', 'Kondisi Khusus',
       'Pengalaman Sosial', 'Bersedia Program Sosial DD', 'Bersedia Publikasi',
       'Skor Total BUKTY', 'Status Seleksi', 'Catatan Admin',
+      'Verifikasi Dokumen Wawancara', 'Status Bayar UKT (Wawancara)',
+      'Skor Ekonomi (1-4)', 'Skor Motivasi (1-4)', 'Skor Konsistensi Esai (1-4)', 'Skor Sikap & Kejujuran (1-4)',
+      'Total Skor Tertimbang Wawancara', 'Rekomendasi Hasil Wawancara',
     ];
 
     const escapeCsv = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`;
 
     const rows = dataset.map((r) => {
       const scores = calculateBuktyScores(r);
+      const parsedInterview = parseInterviewJson(r.interview_json);
+      const evalInterview = calculateInterviewEvaluation(parsedInterview);
+      const verifSummary = evalInterview.isVerificationFailed
+        ? `GUGUR (${evalInterview.failedItems.join(', ')})`
+        : evalInterview.verifiedCount > 0
+        ? `LOLOS (${evalInterview.passedCount}/${INTERVIEW_VERIFICATION_ITEMS.length})`
+        : 'Belum Diverifikasi';
+
       return [
         escapeCsv(r.reg_id),
         escapeCsv(r.submitted_at),
@@ -276,6 +300,14 @@ export default function AdminDashboard({ onLeaveAdmin }) {
         escapeCsv(scores.score_total),
         escapeCsv(r.status_seleksi),
         escapeCsv(r.catatan_admin),
+        escapeCsv(verifSummary),
+        escapeCsv(parsedInterview.uktPaymentStatus || '-'),
+        escapeCsv(parsedInterview.scores?.kondisi_ekonomi || ''),
+        escapeCsv(parsedInterview.scores?.motivasi_studi || ''),
+        escapeCsv(parsedInterview.scores?.konsistensi_esai || ''),
+        escapeCsv(parsedInterview.scores?.sikap_komunikasi || ''),
+        escapeCsv(evalInterview.scoredIndicatorsCount > 0 ? evalInterview.totalWeightedScore : ''),
+        escapeCsv(evalInterview.isAssessed ? evalInterview.recommendation : 'Belum Diwawancara'),
       ];
     });
 
@@ -307,10 +339,23 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     }
   };
 
-  const handleUpdateLeaderboardStatus = async (id, status, catatan) => {
+  const handleUpdateLeaderboardStatus = async (id, status, catatan, interviewPayload) => {
     setSavingStatus(true);
+    const finalInterviewObj = {
+      ...(interviewPayload || interviewForm),
+      updatedAt: new Date().toISOString(),
+    };
+    const serializedInterview = JSON.stringify(finalInterviewObj);
+
     const updated = registrations.map((item) =>
-      item.id === id ? { ...item, status_seleksi: status, catatan_admin: catatan } : item
+      item.id === id
+        ? {
+            ...item,
+            status_seleksi: status,
+            catatan_admin: catatan,
+            interview_json: serializedInterview,
+          }
+        : item
     );
     setRegistrations(updated);
     localStorage.setItem(LOCAL_SUBMISSIONS_KEY, JSON.stringify(updated));
@@ -319,7 +364,12 @@ export default function AdminDashboard({ onLeaveAdmin }) {
       await fetch('/api/admin/registrations', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status_seleksi: status, catatan_admin: catatan }),
+        body: JSON.stringify({
+          id,
+          status_seleksi: status,
+          catatan_admin: catatan,
+          interview_json: serializedInterview,
+        }),
       });
     } catch (e) {
       console.error(e);
@@ -332,6 +382,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     setSelectedLeaderboardItem(item);
     setLeaderboardStatus(item.status_seleksi || 'Pending');
     setLeaderboardComment(item.catatan_admin || '');
+    setInterviewForm(parseInterviewJson(item.interview_json));
 
     try {
       if (item.uploaded_files_json) {
@@ -346,6 +397,47 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     setActiveDocKey(null);
   };
 
+  const handleOpenDocShortcut = (docKey) => {
+    setActiveDocKey(docKey);
+    setMiddlePanelMode('docs');
+  };
+
+  const handleSetVerificationItem = (key, value) => {
+    setInterviewForm((prev) => ({
+      ...prev,
+      verifications: {
+        ...prev.verifications,
+        [key]: prev.verifications[key] === value ? null : value,
+      },
+    }));
+  };
+
+  const handleMarkAllVerificationPass = () => {
+    const allPass = {};
+    INTERVIEW_VERIFICATION_ITEMS.forEach((item) => {
+      allPass[item.key] = 'pass';
+    });
+    setInterviewForm((prev) => ({
+      ...prev,
+      verifications: allPass,
+    }));
+  };
+
+  const handleSetIndicatorScore = (key, scoreVal) => {
+    setInterviewForm((prev) => ({
+      ...prev,
+      scores: {
+        ...prev.scores,
+        [key]: prev.scores[key] === scoreVal ? 0 : scoreVal,
+      },
+    }));
+  };
+
+  const handleResetInterviewForm = () => {
+    if (!window.confirm('Reset seluruh isian verifikasi & nilai wawancara kandidat ini?')) return;
+    setInterviewForm(createDefaultInterviewState());
+  };
+
   useEffect(() => {
     if (activeTab === 'leaderboard') {
       const data = getLeaderboardData();
@@ -357,6 +449,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
           const current = data.find((x) => x.id === selectedLeaderboardItem.id);
           setLeaderboardStatus(current.status_seleksi || 'Pending');
           setLeaderboardComment(current.catatan_admin || '');
+          setInterviewForm(parseInterviewJson(current.interview_json));
         }
       } else {
         setSelectedLeaderboardItem(null);
@@ -365,9 +458,24 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     }
   }, [activeTab, registrations, onlyQualifiedLeaderboard]);
 
+  const handleSaveCurrentInterview = async () => {
+    if (!selectedLeaderboardItem) return;
+    await handleUpdateLeaderboardStatus(
+      selectedLeaderboardItem.id,
+      leaderboardStatus,
+      leaderboardComment,
+      interviewForm
+    );
+  };
+
   const handleSaveAndNext = async () => {
     if (!selectedLeaderboardItem) return;
-    await handleUpdateLeaderboardStatus(selectedLeaderboardItem.id, leaderboardStatus, leaderboardComment);
+    await handleUpdateLeaderboardStatus(
+      selectedLeaderboardItem.id,
+      leaderboardStatus,
+      leaderboardComment,
+      interviewForm
+    );
 
     const data = getLeaderboardData();
     const currentIndex = data.findIndex((x) => x.id === selectedLeaderboardItem.id);
@@ -1070,14 +1178,14 @@ export default function AdminDashboard({ onLeaveAdmin }) {
           </>
         )}
 
-        {/* TAB 2: LEADERBOARD SPLIT-SCREEN FAST VERIFIER */}
+        {/* TAB 2: LEADERBOARD SPLIT-SCREEN FAST VERIFIER & INTERVIEW RUBRIC */}
         {activeTab === 'leaderboard' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-            {/* Left: Ranking List */}
-            <div className="lg:col-span-4 space-y-4">
-              <div className="bg-white border-[3px] border-[#111827] p-4 rounded-3xl shadow-[4px_4px_0px_#111827]">
-                <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-                  <h4 className="font-black text-sm flex items-center gap-2">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+            {/* COLUMN 1 (LEFT - lg:col-span-3): Ranking List */}
+            <div className="lg:col-span-3 space-y-4">
+              <div className="bg-white border-[3px] border-[#111827] p-3.5 rounded-3xl shadow-[4px_4px_0px_#111827]">
+                <div className="flex items-center justify-between mb-2.5 gap-2 flex-wrap">
+                  <h4 className="font-black text-xs sm:text-sm flex items-center gap-1.5">
                     <Trophy className="w-4 h-4 text-[#1D4ED8]" />
                     <span>Leaderboard ({getLeaderboardData().length})</span>
                   </h4>
@@ -1085,36 +1193,36 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   <button
                     onClick={handleSyncGoogleSheets}
                     disabled={isSyncing}
-                    className="px-2.5 py-1.5 text-[10px] font-black bg-[#FFD60A] text-[#111827] border-2 border-[#111827] rounded-xl shadow-[2px_2px_0px_#111827] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    className="px-2 py-1 text-[10px] font-black bg-[#FFD60A] text-[#111827] border-2 border-[#111827] rounded-xl shadow-[2px_2px_0px_#111827] flex items-center gap-1 cursor-pointer disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                    <span>{isSyncing ? 'Syncing...' : 'Sync Sheets'}</span>
+                    <span>{isSyncing ? 'Sync...' : 'Sync Sheets'}</span>
                   </button>
                 </div>
 
                 {/* Toggle Qualified Filter */}
-                <label className="flex items-center gap-2 mb-3 bg-[#EFF6FF] border border-[#111827] px-3 py-2 rounded-xl text-[10px] font-extrabold cursor-pointer">
+                <label className="flex items-center gap-2 mb-2.5 bg-[#EFF6FF] border border-[#111827] px-2.5 py-2 rounded-xl text-[10px] font-extrabold cursor-pointer">
                   <input
                     type="checkbox"
                     checked={onlyQualifiedLeaderboard}
                     onChange={(e) => setOnlyQualifiedLeaderboard(e.target.checked)}
                     className="accent-[#1D4ED8]"
                   />
-                  <span>Filter Ketat BUKTY (Islam, 13 Prov, PTN, IPK≥3, Non-Beasiswa)</span>
+                  <span>Filter Ketat BUKTY (MS Syarat Utama)</span>
                 </label>
 
-                <div className="relative mb-3">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                <div className="relative mb-2.5">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Cari kandidat..."
+                    placeholder="Cari nama / kampus / reg..."
                     value={leaderboardSearchQuery}
                     onChange={(e) => setLeaderboardSearchQuery(e.target.value)}
-                    className="form-input pl-9 pr-3 py-2 text-xs font-bold"
+                    className="form-input pl-8 pr-3 py-1.5 text-xs font-bold"
                   />
                 </div>
 
-                <div className="max-h-[580px] overflow-y-auto space-y-2.5 pr-1">
+                <div className="max-h-[650px] overflow-y-auto space-y-2 pr-1">
                   {getLeaderboardData().length === 0 ? (
                     <div className="p-8 text-center text-gray-500 font-bold text-xs">
                       Belum ada pendaftar pada filter leaderboard ini.
@@ -1135,37 +1243,69 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                         badgeText = 'Gugur';
                       }
 
+                      const itemInterviewEval = calculateInterviewEvaluation(item.interview_json);
+                      let interviewPillStyle = 'bg-gray-100 text-gray-600 border-gray-300';
+                      if (itemInterviewEval.recommendationColor === 'green') {
+                        interviewPillStyle = 'bg-[#DCFCE7] text-[#15803D] border-[#15803D]';
+                      } else if (itemInterviewEval.recommendationColor === 'amber') {
+                        interviewPillStyle = 'bg-[#FEF9C3] text-amber-800 border-amber-500';
+                      } else if (itemInterviewEval.recommendationColor === 'red') {
+                        interviewPillStyle = 'bg-red-100 text-red-700 border-red-500';
+                      }
+
                       return (
                         <div
                           key={item.id}
                           onClick={() => handleSelectRankItem(item)}
-                          className={`p-3 rounded-2xl border-2 cursor-pointer transition-all shadow-[2px_2px_0px_#111827] flex items-center justify-between gap-3 ${
+                          className={`p-2.5 rounded-2xl border-2 cursor-pointer transition-all shadow-[2px_2px_0px_#111827] ${
                             isSelected ? 'bg-[#EFF6FF] border-[#1D4ED8]' : 'bg-white border-[#111827]/40 hover:bg-[#FFFDF5]'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-7 h-7 rounded-lg bg-[#FFD60A] text-[#111827] font-mono-code font-black border-2 border-[#111827] flex items-center justify-center text-xs shrink-0">
-                              {index + 1}
-                            </div>
-                            <div className="min-w-0">
-                              <h4 className="font-black text-[11px] uppercase truncate">{item.nama}</h4>
-                              <p className="text-[9px] text-gray-500 font-bold truncate">
-                                {item.perguruan_tinggi} • {item.provinsi}
-                              </p>
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className="text-[9px] font-black text-[#1D4ED8] font-mono-code">{item.reg_id}</span>
-                                <span className="text-[9px] font-black px-1 bg-[#FEF9C3] border border-[#111827] rounded">
-                                  {item.status_yatim}
-                                </span>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-6 h-6 rounded-lg bg-[#FFD60A] text-[#111827] font-mono-code font-black border-2 border-[#111827] flex items-center justify-center text-[11px] shrink-0">
+                                {index + 1}
                               </div>
+                              <div className="min-w-0">
+                                <h4 className="font-black text-[11px] uppercase truncate">{item.nama}</h4>
+                                <p className="text-[9px] text-gray-500 font-bold truncate">
+                                  {item.perguruan_tinggi} • {item.provinsi}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <div className="text-[11px] font-black font-mono-code text-[#111827]" title="Skor Prioritas BUKTY">
+                                {item.score_total}
+                              </div>
+                              <span className={`inline-block px-1.5 py-0.5 rounded border text-[8px] font-black ${badgeStyle}`}>
+                                {badgeText}
+                              </span>
                             </div>
                           </div>
 
-                          <div className="text-right shrink-0">
-                            <div className="text-xs font-black font-mono-code">{item.score_total}</div>
-                            <span className={`inline-block px-1.5 py-0.5 rounded border text-[9px] font-black mt-1 ${badgeStyle}`}>
-                              {badgeText}
-                            </span>
+                          <div className="flex items-center justify-between gap-1 mt-1.5 pt-1.5 border-t border-gray-200/70">
+                            <div className="flex items-center gap-1 min-w-0">
+                              <span className="text-[8px] font-black text-[#1D4ED8] font-mono-code">{item.reg_id}</span>
+                              <span className="text-[8px] font-black px-1 bg-[#FEF9C3] border border-[#111827] rounded truncate">
+                                {item.status_yatim}
+                              </span>
+                            </div>
+                            {itemInterviewEval.isAssessed && (
+                              <span
+                                className={`text-[8px] font-black px-1.5 py-0.5 rounded border font-mono-code shrink-0 ${interviewPillStyle}`}
+                                title={itemInterviewEval.recommendationDesc}
+                              >
+                                WWC: {itemInterviewEval.totalWeightedScore} •{' '}
+                                {itemInterviewEval.recommendation === 'DIREKOMENDASIKAN'
+                                  ? 'REKOM'
+                                  : itemInterviewEval.recommendation === 'CADANGAN'
+                                  ? 'CADANGAN'
+                                  : itemInterviewEval.recommendation === 'TIDAK DIREKOMENDASIKAN'
+                                  ? 'TDK REKOM'
+                                  : 'PROSES'}
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
@@ -1175,174 +1315,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
               </div>
             </div>
 
-            {/* Middle: Candidate Detail, BUKTY Scoring & Verification Controls */}
-            <div className="lg:col-span-4 space-y-4">
-              {selectedLeaderboardItem ? (
-                <div className="bg-white border-[3px] border-[#111827] rounded-3xl shadow-[4px_4px_0px_#111827] overflow-hidden flex flex-col max-h-[750px]">
-                  <div className="bg-[#1D4ED8] text-white border-b-2 border-[#111827] p-4 shrink-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-[#FFD60A] font-mono-code text-xs">
-                        {selectedLeaderboardItem.reg_id}
-                      </span>
-                      <span className="px-2 py-0.5 rounded bg-[#FFD60A] text-[#111827] text-[10px] font-black">
-                        {selectedLeaderboardItem.status_yatim || '-'}
-                      </span>
-                    </div>
-                    <h3 className="font-black text-sm uppercase mt-1 truncate">{selectedLeaderboardItem.nama}</h3>
-                    <p className="text-[10px] font-bold text-blue-100 truncate">
-                      {selectedLeaderboardItem.perguruan_tinggi} ({selectedLeaderboardItem.jenis_pt || 'PTN'}) •{' '}
-                      {selectedLeaderboardItem.provinsi}
-                    </p>
-                  </div>
-
-                  <div className="p-4 overflow-y-auto space-y-4 flex-grow text-xs">
-                    {/* Eligibility Flags Warning if TMS */}
-                    {!selectedLeaderboardItem.eligibility.isQualified && (
-                      <div className="bg-red-50 border-2 border-red-500 p-3 rounded-xl text-[11px] font-bold text-red-700">
-                        <strong>Catatan Auto-Screening (TMS):</strong>{' '}
-                        {selectedLeaderboardItem.eligibility.flags.join(' • ')}
-                      </div>
-                    )}
-
-                    {/* BUKTY 35/45/20 Score Breakdown */}
-                    <div className="bg-[#EFF6FF] p-3 rounded-2xl border-2 border-[#111827] space-y-1.5 text-[11px]">
-                      <h5 className="font-black text-[10px] text-[#1D4ED8] uppercase tracking-wider">
-                        Skor Prioritas BUKTY (35 / 45 / 20)
-                      </h5>
-                      <div className="flex justify-between font-bold">
-                        <span>Status Yatim (35%):</span>
-                        <span className="font-mono-code font-black">
-                          {(selectedLeaderboardItem.score_yatim * 0.35).toFixed(2)} / 35
-                        </span>
-                      </div>
-                      <div className="flex justify-between font-bold">
-                        <span>Rasio Beban UKT (45%):</span>
-                        <span className="font-mono-code font-black">
-                          {(selectedLeaderboardItem.score_ratio * 0.45).toFixed(2)} / 45
-                        </span>
-                      </div>
-                      <div className="flex justify-between font-bold">
-                        <span>Jumlah Tanggungan (20%):</span>
-                        <span className="font-mono-code font-black">
-                          {(selectedLeaderboardItem.score_tanggungan * 0.2).toFixed(2)} / 20
-                        </span>
-                      </div>
-                      <div className="border-t-2 border-[#111827]/20 pt-1.5 flex justify-between font-black text-xs text-[#1D4ED8]">
-                        <span>Skor Total:</span>
-                        <span className="font-mono-code">{selectedLeaderboardItem.score_total} / 100</span>
-                      </div>
-                    </div>
-
-                    {/* Key Academic & Economy Stats */}
-                    <div className="grid grid-cols-2 gap-2 bg-[#FFFDF5] p-3 rounded-2xl border border-[#111827]/30 font-bold">
-                      <div>
-                        <span className="text-[10px] text-gray-500 block">IPK / Rapor</span>
-                        <strong className="text-[#1D4ED8]">{selectedLeaderboardItem.ipk}</strong>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-gray-500 block">Nominal UKT</span>
-                        <strong className="text-[#15803D]">Rp {selectedLeaderboardItem.nominal_ukt}</strong>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-gray-500 block">Penghasilan Ortu</span>
-                        <strong>Rp {selectedLeaderboardItem.penghasilan_ortu}</strong>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-gray-500 block">Tanggungan / Rumah</span>
-                        <strong>
-                          {selectedLeaderboardItem.jumlah_tanggungan} Jiwa / {selectedLeaderboardItem.status_rumah}
-                        </strong>
-                      </div>
-                    </div>
-
-                    {/* Bio & Sosial */}
-                    <div className="space-y-1.5 font-bold">
-                      <div><span className="text-gray-500">NIK / Agama:</span> {selectedLeaderboardItem.nik} / {selectedLeaderboardItem.agama}</div>
-                      <div><span className="text-gray-500">Prodi / Sem:</span> {selectedLeaderboardItem.fakultas_prodi} ({selectedLeaderboardItem.jenjang}-Sem {selectedLeaderboardItem.semester})</div>
-                      <div><span className="text-gray-500">WA / Email:</span> {selectedLeaderboardItem.no_hp} / {selectedLeaderboardItem.email}</div>
-                      <div><span className="text-gray-500">Ortu / Kondisi:</span> {selectedLeaderboardItem.nama_ortu} ({selectedLeaderboardItem.pekerjaan_ortu} — {selectedLeaderboardItem.kondisi_pekerjaan})</div>
-                      <div><span className="text-gray-500">Kondisi Khusus:</span> {selectedLeaderboardItem.kondisi_khusus}</div>
-                      <div><span className="text-gray-500">Beasiswa Lain:</span> {selectedLeaderboardItem.sedang_beasiswa_lain} {selectedLeaderboardItem.detail_beasiswa_lain && `(${selectedLeaderboardItem.detail_beasiswa_lain})`}</div>
-                      <div><span className="text-gray-500">Program Sosial DD / Publikasi:</span> {selectedLeaderboardItem.bersedia_program_sosial} / {selectedLeaderboardItem.bersedia_publikasi}</div>
-                      {selectedLeaderboardItem.pengalaman_sosial && (
-                        <div className="bg-[#FFFDF5] p-2.5 rounded-xl border border-gray-200 mt-1">
-                          <span className="block text-[10px] text-gray-500 uppercase">Pengalaman Aktivitas Sosial:</span>
-                          <p className="text-[11px] font-semibold mt-0.5 whitespace-pre-wrap">
-                            {selectedLeaderboardItem.pengalaman_sosial}
-                          </p>
-                        </div>
-                      )}
-                      {selectedLeaderboardItem.kendala_ukt && (
-                        <div className="bg-[#FFFDF5] p-2.5 rounded-xl border border-gray-200">
-                          <span className="block text-[10px] text-gray-500 uppercase">Kendala & Upaya UKT:</span>
-                          <p className="text-[11px] font-semibold mt-0.5 whitespace-pre-wrap">
-                            {selectedLeaderboardItem.kendala_ukt} — {selectedLeaderboardItem.upaya_ukt}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Sticky Verification Controls */}
-                  <div className="bg-[#EFF6FF] border-t-2 border-[#111827] p-4 space-y-3 shrink-0">
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {[
-                        { val: 'Pending', label: 'Pending' },
-                        { val: 'Lolos Administrasi', label: 'Lolos' },
-                        { val: 'Diterima', label: 'Diterima' },
-                        { val: 'Tidak Lolos', label: 'Gugur' },
-                      ].map((st) => {
-                        let cls = 'bg-white text-gray-700 border-[#111827]/40 hover:bg-gray-50';
-                        if (leaderboardStatus === st.val) {
-                          if (st.val === 'Lolos Administrasi') cls = 'bg-[#15803D] text-white border-[#111827]';
-                          else if (st.val === 'Diterima') cls = 'bg-[#1D4ED8] text-white border-[#111827]';
-                          else if (st.val === 'Tidak Lolos') cls = 'bg-red-600 text-white border-[#111827]';
-                          else cls = 'bg-[#FFD60A] text-[#111827] border-[#111827]';
-                        }
-                        return (
-                          <button
-                            key={st.val}
-                            type="button"
-                            onClick={() => setLeaderboardStatus(st.val)}
-                            className={`py-2 px-1 border-2 rounded-xl font-black text-[9px] uppercase cursor-pointer ${cls}`}
-                          >
-                            {st.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <textarea
-                      value={leaderboardComment}
-                      onChange={(e) => setLeaderboardComment(e.target.value)}
-                      placeholder="Catatan verifikator (kelayakan rumah, esai, alasan gugur)..."
-                      className="w-full text-xs font-semibold p-2.5 bg-white border-2 border-[#111827] rounded-xl h-14 resize-none"
-                    />
-
-                    <button
-                      onClick={handleSaveAndNext}
-                      disabled={savingStatus}
-                      className="btn-yellow w-full py-2.5 text-xs disabled:opacity-75"
-                    >
-                      {savingStatus ? (
-                        <span>Menyimpan...</span>
-                      ) : (
-                        <>
-                          <span>Simpan & Lanjut Kandidat Berikutnya</span>
-                          <ChevronRight className="w-4 h-4" />
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-white border-[3px] border-[#111827] rounded-3xl p-10 text-center text-gray-500 font-bold text-xs shadow-[4px_4px_0px_#111827]">
-                  Pilih kandidat di daftar Leaderboard sebelah kiri untuk mulai verifikasi.
-                </div>
-              )}
-            </div>
-
-            {/* Right: Inline Document Viewer */}
+            {/* COLUMN 2 (MIDDLE - lg:col-span-4): Candidate Detail & Inline Document Viewer Combined */}
             <div className="lg:col-span-4 space-y-4">
               {selectedLeaderboardItem ? (
                 (() => {
@@ -1363,62 +1336,281 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   });
 
                   const fileObj = activeDocKey ? uploadedFiles[activeDocKey] : null;
-                  const fileUrl = fileObj ? fileObj.fileUrl || (fileObj.fileName ? `/api/files/${fileObj.fileName}` : null) : null;
+                  const fileUrl = fileObj
+                    ? fileObj.fileUrl || (fileObj.fileName ? `/api/files/${fileObj.fileName}` : null)
+                    : null;
                   const isImage = fileObj?.name && /\.(jpe?g|png|webp|gif)$/i.test(fileObj.name);
 
                   return (
-                    <div className="bg-white border-[3px] border-[#111827] p-4 rounded-3xl shadow-[4px_4px_0px_#111827] flex flex-col max-h-[750px]">
-                      <h4 className="font-black text-sm mb-2 flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-[#1D4ED8]" />
-                        <span>Pratinjau Berkas ({fileKeys.length})</span>
-                      </h4>
+                    <div className="bg-white border-[3px] border-[#111827] rounded-3xl shadow-[4px_4px_0px_#111827] overflow-hidden flex flex-col max-h-[820px]">
+                      {/* Candidate Identity Header */}
+                      <div className="bg-[#1D4ED8] text-white border-b-2 border-[#111827] p-3.5 shrink-0">
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-[#FFD60A] font-mono-code text-xs">
+                            {selectedLeaderboardItem.reg_id}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-[#FFD60A] text-[#111827] text-[10px] font-black">
+                            {selectedLeaderboardItem.status_yatim || '-'}
+                          </span>
+                        </div>
+                        <h3 className="font-black text-sm uppercase mt-1 truncate">{selectedLeaderboardItem.nama}</h3>
+                        <p className="text-[10px] font-bold text-blue-100 truncate">
+                          {selectedLeaderboardItem.perguruan_tinggi} ({selectedLeaderboardItem.jenis_pt || 'PTN'}) •{' '}
+                          {selectedLeaderboardItem.provinsi}
+                        </p>
 
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {fileKeys.length === 0 ? (
-                          <span className="text-[10px] text-gray-400 font-bold">Tidak ada berkas diunggah.</span>
-                        ) : (
-                          fileKeys.map((k) => (
-                            <button
-                              key={k}
-                              type="button"
-                              onClick={() => setActiveDocKey(k)}
-                              className={`px-2 py-1 border border-[#111827] rounded-lg font-black text-[9px] uppercase cursor-pointer ${
-                                activeDocKey === k
-                                  ? 'bg-[#1D4ED8] text-white'
-                                  : 'bg-[#FFFDF5] hover:bg-[#FEF9C3] text-[#111827]'
-                              }`}
-                            >
-                              {DOC_LABELS[k] || k}
-                            </button>
-                          ))
-                        )}
+                        {/* Middle Column Mode Switcher: Data Detail vs Pratinjau Berkas */}
+                        <div className="grid grid-cols-2 gap-1.5 mt-3 bg-[#1E3A8A] p-1 rounded-xl border border-[#111827]">
+                          <button
+                            type="button"
+                            onClick={() => setMiddlePanelMode('detail')}
+                            className={`py-1.5 px-2 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                              middlePanelMode === 'detail'
+                                ? 'bg-[#FFD60A] text-[#111827] shadow-[1.5px_1.5px_0px_#111827]'
+                                : 'text-blue-100 hover:text-white'
+                            }`}
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Data Detail</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMiddlePanelMode('docs')}
+                            className={`py-1.5 px-2 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                              middlePanelMode === 'docs'
+                                ? 'bg-[#FFD60A] text-[#111827] shadow-[1.5px_1.5px_0px_#111827]'
+                                : 'text-blue-100 hover:text-white'
+                            }`}
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Pratinjau Berkas ({fileKeys.length})</span>
+                          </button>
+                        </div>
                       </div>
 
-                      {fileObj && fileUrl && fileUrl !== '#' ? (
-                        <div className="bg-white border-2 border-[#111827] rounded-2xl overflow-hidden flex flex-col flex-grow h-[580px]">
-                          <div className="bg-[#EFF6FF] border-b border-[#111827] px-3 py-1.5 flex items-center justify-between text-[11px] font-bold shrink-0">
-                            <span className="truncate max-w-[180px]" title={fileObj.name}>{fileObj.name}</span>
-                            <a
-                              href={fileUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[#1D4ED8] underline flex items-center gap-1 font-extrabold"
+                      {/* Quick Document Selector Strip (Always accessible in Middle Column) */}
+                      <div className="bg-[#FFFDF5] border-b-2 border-[#111827] px-3 py-2 shrink-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[9px] font-black uppercase text-gray-500">
+                            Pintasan Berkas Pendaftar (Klik untuk Pratinjau):
+                          </span>
+                          {middlePanelMode === 'docs' && (
+                            <button
+                              type="button"
+                              onClick={() => setMiddlePanelMode('detail')}
+                              className="text-[9px] font-black text-[#1D4ED8] underline cursor-pointer"
                             >
-                              <ExternalLink className="w-3 h-3" />
-                              <span>Tab Baru</span>
-                            </a>
+                              Kembali ke Data Detail
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {fileKeys.length === 0 ? (
+                            <span className="text-[10px] text-gray-400 font-bold">Tidak ada berkas diunggah.</span>
+                          ) : (
+                            fileKeys.map((k) => (
+                              <button
+                                key={k}
+                                type="button"
+                                onClick={() => {
+                                  setActiveDocKey(k);
+                                  setMiddlePanelMode('docs');
+                                }}
+                                className={`px-2 py-0.5 border border-[#111827] rounded-lg font-black text-[9px] uppercase cursor-pointer transition-colors ${
+                                  middlePanelMode === 'docs' && activeDocKey === k
+                                    ? 'bg-[#1D4ED8] text-white'
+                                    : 'bg-white hover:bg-[#FEF9C3] text-[#111827]'
+                                }`}
+                              >
+                                {DOC_LABELS[k] || k}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      {/* MODE A: CANDIDATE DATA DETAIL */}
+                      {middlePanelMode === 'detail' ? (
+                        <div className="p-3.5 overflow-y-auto space-y-3.5 flex-grow text-xs">
+                          {/* Eligibility Flags Warning if TMS */}
+                          {!selectedLeaderboardItem.eligibility.isQualified && (
+                            <div className="bg-red-50 border-2 border-red-500 p-2.5 rounded-xl text-[11px] font-bold text-red-700">
+                              <strong>Catatan Auto-Screening (TMS):</strong>{' '}
+                              {selectedLeaderboardItem.eligibility.flags.join(' • ')}
+                            </div>
+                          )}
+
+                          {/* BUKTY 35/45/20 Score Breakdown */}
+                          <div className="bg-[#EFF6FF] p-3 rounded-2xl border-2 border-[#111827] space-y-1.5 text-[11px]">
+                            <h5 className="font-black text-[10px] text-[#1D4ED8] uppercase tracking-wider">
+                              Skor Prioritas Administrasi BUKTY (35 / 45 / 20)
+                            </h5>
+                            <div className="flex justify-between font-bold">
+                              <span>Status Yatim (35%):</span>
+                              <span className="font-mono-code font-black">
+                                {(selectedLeaderboardItem.score_yatim * 0.35).toFixed(2)} / 35
+                              </span>
+                            </div>
+                            <div className="flex justify-between font-bold">
+                              <span>Rasio Beban UKT (45%):</span>
+                              <span className="font-mono-code font-black">
+                                {(selectedLeaderboardItem.score_ratio * 0.45).toFixed(2)} / 45
+                              </span>
+                            </div>
+                            <div className="flex justify-between font-bold">
+                              <span>Jumlah Tanggungan (20%):</span>
+                              <span className="font-mono-code font-black">
+                                {(selectedLeaderboardItem.score_tanggungan * 0.2).toFixed(2)} / 20
+                              </span>
+                            </div>
+                            <div className="border-t-2 border-[#111827]/20 pt-1.5 flex justify-between font-black text-xs text-[#1D4ED8]">
+                              <span>Skor Total BUKTY:</span>
+                              <span className="font-mono-code">{selectedLeaderboardItem.score_total} / 100</span>
+                            </div>
                           </div>
-                          <div className="bg-gray-100 flex-grow flex items-center justify-center overflow-auto p-1">
-                            {isImage ? (
-                              <img src={fileUrl} alt={fileObj.name} className="max-w-full max-h-full object-contain" />
-                            ) : (
-                              <iframe src={fileUrl} className="w-full h-full border-none" title={fileObj.name} />
+
+                          {/* Key Academic & Economy Stats */}
+                          <div className="grid grid-cols-2 gap-2 bg-[#FFFDF5] p-3 rounded-2xl border border-[#111827]/30 font-bold">
+                            <div>
+                              <span className="text-[10px] text-gray-500 block">IPK / Rapor</span>
+                              <strong className="text-[#1D4ED8]">{selectedLeaderboardItem.ipk}</strong>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-gray-500 block">Nominal UKT & Status</span>
+                              <strong className="text-[#15803D]">Rp {selectedLeaderboardItem.nominal_ukt}</strong>
+                              <span className="block text-[10px] text-gray-600">
+                                ({selectedLeaderboardItem.status_ukt || '-'})
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-gray-500 block">Penghasilan Ortu</span>
+                              <strong>Rp {selectedLeaderboardItem.penghasilan_ortu}/bln</strong>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-gray-500 block">Tanggungan / Rumah</span>
+                              <strong>
+                                {selectedLeaderboardItem.jumlah_tanggungan} Jiwa / {selectedLeaderboardItem.status_rumah}
+                              </strong>
+                            </div>
+                          </div>
+
+                          {/* Bio & Sosial */}
+                          <div className="space-y-1.5 font-bold">
+                            <div>
+                              <span className="text-gray-500">NIK / TTL:</span> {selectedLeaderboardItem.nik} /{' '}
+                              {selectedLeaderboardItem.ttl}
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Gender / Agama:</span> {selectedLeaderboardItem.gender} /{' '}
+                              <span className="px-1.5 py-0.5 bg-[#DCFCE7] text-[#15803D] rounded text-[10px] font-black">
+                                {selectedLeaderboardItem.agama}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Kampus / NIM:</span>{' '}
+                              {selectedLeaderboardItem.perguruan_tinggi} ({selectedLeaderboardItem.nim || '-'})
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Prodi / Jenjang:</span>{' '}
+                              {selectedLeaderboardItem.fakultas_prodi} (
+                              <span className="text-[#1D4ED8] font-black">{selectedLeaderboardItem.jenjang}</span> - Sem{' '}
+                              {selectedLeaderboardItem.semester})
+                            </div>
+                            <div>
+                              <span className="text-gray-500">WA / Email:</span> {selectedLeaderboardItem.no_hp} /{' '}
+                              {selectedLeaderboardItem.email}
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Domisili:</span> {selectedLeaderboardItem.alamat_domisili}
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Ortu / Kondisi:</span> {selectedLeaderboardItem.nama_ortu}{' '}
+                              ({selectedLeaderboardItem.pekerjaan_ortu} — {selectedLeaderboardItem.kondisi_pekerjaan})
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Kondisi Khusus:</span>{' '}
+                              {selectedLeaderboardItem.kondisi_khusus}
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Beasiswa Lain:</span>{' '}
+                              {selectedLeaderboardItem.sedang_beasiswa_lain}{' '}
+                              {selectedLeaderboardItem.detail_beasiswa_lain &&
+                                `(${selectedLeaderboardItem.detail_beasiswa_lain})`}
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Rekening:</span> {selectedLeaderboardItem.bank_rekening} -{' '}
+                              {selectedLeaderboardItem.nomor_rekening} a.n {selectedLeaderboardItem.atas_nama_rekening}
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Program Sosial DD / Publikasi:</span>{' '}
+                              {selectedLeaderboardItem.bersedia_program_sosial} /{' '}
+                              {selectedLeaderboardItem.bersedia_publikasi}
+                            </div>
+                            {selectedLeaderboardItem.kendala_ukt && (
+                              <div className="bg-[#FFFDF5] p-2.5 rounded-xl border border-gray-200">
+                                <span className="block text-[10px] text-gray-500 uppercase">Kendala & Upaya UKT:</span>
+                                <p className="text-[11px] font-semibold mt-0.5 whitespace-pre-wrap">
+                                  {selectedLeaderboardItem.kendala_ukt} — {selectedLeaderboardItem.upaya_ukt}
+                                </p>
+                              </div>
+                            )}
+                            {selectedLeaderboardItem.pengalaman_sosial && (
+                              <div className="bg-[#FFFDF5] p-2.5 rounded-xl border border-gray-200 mt-1">
+                                <span className="block text-[10px] text-gray-500 uppercase">
+                                  Pengalaman Aktivitas Sosial:
+                                </span>
+                                <p className="text-[11px] font-semibold mt-0.5 whitespace-pre-wrap">
+                                  {selectedLeaderboardItem.pengalaman_sosial}
+                                </p>
+                              </div>
                             )}
                           </div>
                         </div>
                       ) : (
-                        <div className="bg-[#FFFDF5] border-2 border-dashed border-gray-300 rounded-2xl p-8 text-center text-gray-400 font-bold text-xs flex-grow flex items-center justify-center h-[580px]">
-                          Pilih berkas di atas untuk pratinjau langsung.
+                        /* MODE B: INLINE DOCUMENT PREVIEW IN MIDDLE COLUMN */
+                        <div className="p-3 flex-grow flex flex-col overflow-hidden">
+                          {fileObj && fileUrl && fileUrl !== '#' ? (
+                            <div className="bg-white border-2 border-[#111827] rounded-2xl overflow-hidden flex flex-col flex-grow h-[580px]">
+                              <div className="bg-[#EFF6FF] border-b border-[#111827] px-3 py-1.5 flex items-center justify-between text-[11px] font-bold shrink-0">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="px-1.5 py-0.5 bg-[#1D4ED8] text-white rounded text-[9px] font-black uppercase shrink-0">
+                                    {DOC_LABELS[activeDocKey] || activeDocKey}
+                                  </span>
+                                  <span className="truncate" title={fileObj.name}>
+                                    {fileObj.name}
+                                  </span>
+                                </div>
+                                <a
+                                  href={fileUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[#1D4ED8] underline flex items-center gap-1 font-extrabold shrink-0 ml-2"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  <span>Tab Baru</span>
+                                </a>
+                              </div>
+                              <div className="bg-gray-100 flex-grow flex items-center justify-center overflow-auto p-1">
+                                {isImage ? (
+                                  <img
+                                    src={fileUrl}
+                                    alt={fileObj.name}
+                                    className="max-w-full max-h-full object-contain"
+                                  />
+                                ) : (
+                                  <iframe
+                                    src={fileUrl}
+                                    className="w-full h-full border-none"
+                                    title={fileObj.name}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-[#FFFDF5] border-2 border-dashed border-gray-300 rounded-2xl p-8 text-center text-gray-400 font-bold text-xs flex-grow flex items-center justify-center h-[580px]">
+                              Pilih salah satu tombol berkas di atas untuk pratinjau dokumen.
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1426,7 +1618,548 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                 })()
               ) : (
                 <div className="bg-white border-[3px] border-[#111827] rounded-3xl p-10 text-center text-gray-500 font-bold text-xs shadow-[4px_4px_0px_#111827]">
-                  Pratinjau 13 dokumen pendaftar akan tampil di sini.
+                  Pilih kandidat di daftar Leaderboard sebelah kiri untuk melihat detail & pratinjau berkas.
+                </div>
+              )}
+            </div>
+
+            {/* COLUMN 3 (RIGHT - lg:col-span-5): FORM RUBRIK WAWANCARA & PENILAIAN */}
+            <div className="lg:col-span-5 space-y-4">
+              {selectedLeaderboardItem ? (
+                (() => {
+                  const evalResult = calculateInterviewEvaluation(interviewForm);
+
+                  let uploadedFiles = {};
+                  try {
+                    if (selectedLeaderboardItem.uploaded_files_json) {
+                      uploadedFiles = JSON.parse(selectedLeaderboardItem.uploaded_files_json);
+                    }
+                  } catch (e) {}
+
+                  let bannerBg = 'bg-gray-100 border-gray-400 text-gray-800';
+                  let badgeBg = 'bg-gray-700 text-white';
+                  if (evalResult.recommendationColor === 'green') {
+                    bannerBg = 'bg-[#DCFCE7] border-[#15803D] text-[#14532D]';
+                    badgeBg = 'bg-[#15803D] text-white';
+                  } else if (evalResult.recommendationColor === 'amber') {
+                    bannerBg = 'bg-[#FEF9C3] border-amber-600 text-amber-900';
+                    badgeBg = 'bg-amber-600 text-white';
+                  } else if (evalResult.recommendationColor === 'red') {
+                    bannerBg = 'bg-red-100 border-red-600 text-red-900';
+                    badgeBg = 'bg-red-600 text-white';
+                  }
+
+                  return (
+                    <div className="bg-white border-[3px] border-[#111827] rounded-3xl shadow-[4px_4px_0px_#111827] overflow-hidden flex flex-col max-h-[820px]">
+                      {/* Header Form Wawancara */}
+                      <div className="bg-[#FFD60A] border-b-2 border-[#111827] p-3.5 shrink-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-xl bg-[#111827] text-[#FFD60A] flex items-center justify-center shrink-0">
+                              <ClipboardCheck className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <h4 className="font-black text-xs sm:text-sm text-[#111827] leading-tight">
+                                Form Rubrik Wawancara BUKTY
+                              </h4>
+                              <p className="text-[10px] font-bold text-gray-800">
+                                Verifikasi Kelayakan Akhir & Penilaian Terbobot (Skala 1–4)
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleResetInterviewForm}
+                            className="px-2 py-1 bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border border-[#111827] rounded-lg text-[9px] font-black flex items-center gap-1 cursor-pointer"
+                            title="Reset isian form wawancara"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Reset</span>
+                          </button>
+                        </div>
+
+                        {/* Live Score & Recommendation Banner */}
+                        <div className={`mt-2.5 p-2.5 rounded-2xl border-2 ${bannerBg} transition-all`}>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <Award className="w-4 h-4 shrink-0" />
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${badgeBg}`}>
+                                {evalResult.recommendation}
+                              </span>
+                            </div>
+                            <div className="text-right font-mono-code">
+                              <span className="text-[10px] font-bold mr-1">Skor Tertimbang:</span>
+                              <span className="text-sm font-black">{evalResult.totalWeightedScore}</span>
+                              <span className="text-[10px] font-bold">/100</span>
+                            </div>
+                          </div>
+                          <p className="text-[10px] font-bold mt-1 leading-snug">{evalResult.recommendationDesc}</p>
+                          <div className="flex items-center justify-between text-[9px] font-extrabold mt-1.5 pt-1 border-t border-black/10">
+                            <span>
+                              Bagian 1: {evalResult.passedCount}/{INTERVIEW_VERIFICATION_ITEMS.length} Sesuai
+                              {evalResult.failedCount > 0 ? ` (${evalResult.failedCount} Gugur)` : ''}
+                            </span>
+                            <span>
+                              Bagian 2: {evalResult.scoredIndicatorsCount}/{INTERVIEW_SCORING_RUBRIC.length} Indikator Dinilai
+                            </span>
+                            {interviewForm.uktPaymentStatus && (
+                              <span className="px-1.5 py-0.5 rounded bg-white/80 border border-black/20">
+                                UKT: {interviewForm.uktPaymentStatus} BAYAR
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Filter View Section Tabs: Semua | Bagian 1 | Bagian 2 */}
+                        <div className="grid grid-cols-3 gap-1 mt-2.5 bg-white/70 p-1 rounded-xl border border-[#111827]">
+                          {[
+                            { key: 'all', label: 'Semua Bagian' },
+                            {
+                              key: 'bagian1',
+                              label: `Bagian 1 (${evalResult.verifiedCount}/${INTERVIEW_VERIFICATION_ITEMS.length})`,
+                            },
+                            {
+                              key: 'bagian2',
+                              label: `Bagian 2 (${evalResult.scoredIndicatorsCount}/${INTERVIEW_SCORING_RUBRIC.length})`,
+                            },
+                          ].map((st) => (
+                            <button
+                              key={st.key}
+                              type="button"
+                              onClick={() => setInterviewSectionTab(st.key)}
+                              className={`py-1 px-2 rounded-lg font-black text-[10px] cursor-pointer transition-all ${
+                                interviewSectionTab === st.key
+                                  ? 'bg-[#1D4ED8] text-white shadow-[1px_1px_0px_#111827]'
+                                  : 'text-[#111827] hover:bg-white'
+                              }`}
+                            >
+                              {st.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Scrollable Rubric Content */}
+                      <div className="p-3.5 overflow-y-auto space-y-5 flex-grow text-xs">
+                        {/* ============================================================
+                            BAGIAN 1: VERIFIKASI DOKUMEN & KELAYAKAN AKHIR (8 POIN)
+                           ============================================================ */}
+                        {(interviewSectionTab === 'all' || interviewSectionTab === 'bagian1') && (
+                          <div className="space-y-2.5">
+                            <div className="flex items-center justify-between gap-2 bg-[#EFF6FF] border-2 border-[#111827] px-3 py-2 rounded-2xl">
+                              <div>
+                                <h5 className="font-black text-[11px] text-[#1D4ED8] uppercase">
+                                  Bagian 1 — Verifikasi Dokumen & Kelayakan Akhir
+                                </h5>
+                                <p className="text-[10px] font-semibold text-gray-600">
+                                  Jika ada item yang ditandai <strong>Gugur</strong>, kandidat otomatis Tidak Direkomendasikan.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleMarkAllVerificationPass}
+                                className="px-2 py-1 bg-[#DCFCE7] hover:bg-[#15803D] text-[#15803D] hover:text-white border border-[#15803D] rounded-lg text-[9px] font-black shrink-0 cursor-pointer transition-colors"
+                              >
+                                ✓ Lolos Semua
+                              </button>
+                            </div>
+
+                            <div className="space-y-2">
+                              {INTERVIEW_VERIFICATION_ITEMS.map((item) => {
+                                const currentVal = interviewForm.verifications?.[item.key] || null;
+                                let cardBorder = 'border-[#111827]/30 bg-[#FFFDF5]';
+                                if (currentVal === 'pass') cardBorder = 'border-[#15803D] bg-[#DCFCE7]/30';
+                                else if (currentVal === 'fail') cardBorder = 'border-red-600 bg-red-50';
+
+                                // Contextual candidate form data for quick reference
+                                let quickContext = null;
+                                if (item.key === 'identitas_kampus') {
+                                  quickContext = `${selectedLeaderboardItem.nama} • ${selectedLeaderboardItem.perguruan_tinggi}`;
+                                } else if (item.key === 'status_yatim') {
+                                  quickContext = `Form: ${selectedLeaderboardItem.status_yatim} (Ortu: ${selectedLeaderboardItem.nama_ortu})`;
+                                } else if (item.key === 'agama_islam') {
+                                  quickContext = `Isian Form: ${selectedLeaderboardItem.agama}`;
+                                } else if (item.key === 'jenjang_mahasiswa') {
+                                  quickContext = `Isian Form: ${selectedLeaderboardItem.jenjang} • Semester ${selectedLeaderboardItem.semester}`;
+                                } else if (item.key === 'foto_rumah') {
+                                  quickContext = `Rumah: ${selectedLeaderboardItem.status_rumah} • Penghasilan: Rp ${selectedLeaderboardItem.penghasilan_ortu}`;
+                                } else if (item.key === 'slip_ukt') {
+                                  quickContext = `UKT: Rp ${selectedLeaderboardItem.nominal_ukt} (${selectedLeaderboardItem.status_ukt || '-'})`;
+                                }
+
+                                return (
+                                  <div
+                                    key={item.key}
+                                    className={`p-3 rounded-2xl border-2 transition-all space-y-2 ${cardBorder}`}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="space-y-0.5">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="w-5 h-5 rounded-md bg-[#111827] text-white font-mono-code font-black text-[10px] flex items-center justify-center shrink-0">
+                                            {item.no}
+                                          </span>
+                                          <h6 className="font-black text-xs text-[#111827]">{item.title}</h6>
+                                        </div>
+                                        <p className="text-[10px] font-semibold text-gray-600 pl-6">
+                                          <span className="font-extrabold text-gray-700">Cara verifikasi:</span>{' '}
+                                          {item.howToVerify}
+                                        </p>
+                                        {quickContext && (
+                                          <div className="pl-6 pt-0.5">
+                                            <span className="inline-block px-2 py-0.5 rounded bg-white border border-gray-300 text-[10px] font-bold text-[#1D4ED8]">
+                                              {quickContext}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* Pass / Fail Buttons */}
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSetVerificationItem(item.key, 'pass')}
+                                          className={`px-2.5 py-1.5 rounded-xl border-2 font-black text-[10px] flex items-center gap-1 cursor-pointer transition-all ${
+                                            currentVal === 'pass'
+                                              ? 'bg-[#15803D] text-white border-[#111827] shadow-[1.5px_1.5px_0px_#111827]'
+                                              : 'bg-white text-[#15803D] border-[#15803D]/50 hover:bg-[#DCFCE7]'
+                                          }`}
+                                        >
+                                          <Check className="w-3 h-3" />
+                                          <span>Sesuai</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSetVerificationItem(item.key, 'fail')}
+                                          className={`px-2.5 py-1.5 rounded-xl border-2 font-black text-[10px] flex items-center gap-1 cursor-pointer transition-all ${
+                                            currentVal === 'fail'
+                                              ? 'bg-red-600 text-white border-[#111827] shadow-[1.5px_1.5px_0px_#111827]'
+                                              : 'bg-white text-red-600 border-red-400 hover:bg-red-50'
+                                          }`}
+                                        >
+                                          <XCircle className="w-3 h-3" />
+                                          <span>Gugur</span>
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Shortcut to preview related documents in Middle Column + UKT Payment Status toggle for Item 7 */}
+                                    {(item.docKeys.length > 0 || item.hasUktPaymentStatus) && (
+                                      <div className="pl-6 pt-1 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200/70">
+                                        {item.docKeys.length > 0 && (
+                                          <div className="flex flex-wrap items-center gap-1">
+                                            <span className="text-[9px] font-extrabold text-gray-500 mr-0.5">
+                                              Cek Berkas:
+                                            </span>
+                                            {item.docKeys.map((dk) => {
+                                              const hasDoc = Boolean(uploadedFiles[dk]);
+                                              return (
+                                                <button
+                                                  key={dk}
+                                                  type="button"
+                                                  onClick={() => handleOpenDocShortcut(dk)}
+                                                  disabled={!hasDoc}
+                                                  className={`px-2 py-0.5 rounded-md border text-[9px] font-black flex items-center gap-1 cursor-pointer ${
+                                                    hasDoc
+                                                      ? activeDocKey === dk && middlePanelMode === 'docs'
+                                                        ? 'bg-[#1D4ED8] text-white border-[#111827]'
+                                                        : 'bg-white hover:bg-[#FFD60A] text-[#111827] border-[#111827]'
+                                                      : 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
+                                                  }`}
+                                                >
+                                                  <FileText className="w-2.5 h-2.5" />
+                                                  <span>{DOC_LABELS[dk] || dk}</span>
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+
+                                        {item.hasUktPaymentStatus && (
+                                          <div className="flex items-center gap-1">
+                                            <span className="text-[9px] font-extrabold text-gray-600">
+                                              Status Bayar UKT:
+                                            </span>
+                                            {['SUDAH', 'BELUM'].map((stUkt) => (
+                                              <button
+                                                key={stUkt}
+                                                type="button"
+                                                onClick={() =>
+                                                  setInterviewForm((prev) => ({
+                                                    ...prev,
+                                                    uktPaymentStatus: prev.uktPaymentStatus === stUkt ? '' : stUkt,
+                                                  }))
+                                                }
+                                                className={`px-2 py-0.5 rounded-md border text-[9px] font-black cursor-pointer ${
+                                                  interviewForm.uktPaymentStatus === stUkt
+                                                    ? 'bg-[#1D4ED8] text-white border-[#111827]'
+                                                    : 'bg-white text-gray-700 border-gray-400 hover:bg-[#EFF6FF]'
+                                                }`}
+                                              >
+                                                {stUkt} BAYAR
+                                              </button>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* ============================================================
+                            BAGIAN 2: PENILAIAN TERBOBOT DENGAN SKALA INDIKATOR 1-4
+                           ============================================================ */}
+                        {(interviewSectionTab === 'all' || interviewSectionTab === 'bagian2') && (
+                          <div className="space-y-3">
+                            <div className="bg-[#EFF6FF] border-2 border-[#111827] px-3 py-2 rounded-2xl">
+                              <h5 className="font-black text-[11px] text-[#1D4ED8] uppercase">
+                                Bagian 2 — Penilaian Terbobot (Skala Indikator 1–4)
+                              </h5>
+                              <p className="text-[10px] font-semibold text-gray-600">
+                                Pilih skor <strong>1 (Kurang)</strong> s.d. <strong>4 (Sangat Baik)</strong> sesuai rubrik di bawah.
+                              </p>
+                            </div>
+
+                            <div className="space-y-3">
+                              {INTERVIEW_SCORING_RUBRIC.map((ind) => {
+                                const selectedScore = Number(interviewForm.scores?.[ind.key]) || 0;
+                                const indEval = evalResult.breakdown[ind.key] || {
+                                  raw: 0,
+                                  weighted: 0,
+                                  maxWeight: ind.weight,
+                                };
+
+                                return (
+                                  <div
+                                    key={ind.key}
+                                    className="bg-[#FFFDF5] border-2 border-[#111827] rounded-2xl p-3 space-y-2.5 shadow-[2px_2px_0px_#111827]"
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="w-5 h-5 rounded-md bg-[#1D4ED8] text-white font-mono-code font-black text-[10px] flex items-center justify-center shrink-0">
+                                            {ind.no}
+                                          </span>
+                                          <h6 className="font-black text-xs text-[#111827]">{ind.title}</h6>
+                                        </div>
+                                        <span className="inline-block mt-1 px-2 py-0.5 rounded bg-[#FFD60A] border border-[#111827] text-[9px] font-black">
+                                          {ind.badge}
+                                        </span>
+                                      </div>
+
+                                      <div className="text-right font-mono-code shrink-0 bg-white px-2.5 py-1 rounded-xl border border-[#111827]">
+                                        <span className="text-[9px] text-gray-500 block font-sans font-bold">
+                                          Nilai Bobot
+                                        </span>
+                                        <span className="font-black text-xs text-[#1D4ED8]">
+                                          {indEval.weighted} / {ind.weight}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {/* Key Questions Box */}
+                                    <div className="bg-[#EFF6FF] border border-[#1D4ED8]/30 rounded-xl p-2.5 space-y-1">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[9px] font-black uppercase text-[#1D4ED8] flex items-center gap-1">
+                                          <HelpCircle className="w-3 h-3" />
+                                          <span>Pertanyaan Kunci / Panduan Observasi:</span>
+                                        </span>
+                                        {ind.docKeys && ind.docKeys.length > 0 && (
+                                          <div className="flex items-center gap-1">
+                                            {ind.docKeys.map((dk) => {
+                                              const hasDoc = Boolean(uploadedFiles[dk]);
+                                              return (
+                                                <button
+                                                  key={dk}
+                                                  type="button"
+                                                  onClick={() => handleOpenDocShortcut(dk)}
+                                                  disabled={!hasDoc}
+                                                  className={`px-1.5 py-0.5 rounded border text-[8px] font-black cursor-pointer ${
+                                                    hasDoc
+                                                      ? 'bg-white hover:bg-[#FFD60A] text-[#111827] border-[#111827]'
+                                                      : 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
+                                                  }`}
+                                                >
+                                                  Lihat {DOC_LABELS[dk] || dk}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <ul className="list-disc list-inside text-[10px] font-bold text-[#111827] space-y-0.5">
+                                        {ind.questions.map((q, qIdx) => (
+                                          <li key={qIdx}>{q}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+
+                                    {/* 1 - 4 Score Cards */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                      {ind.options.map((opt) => {
+                                        const isChosen = selectedScore === opt.score;
+                                        let activeStyle =
+                                          'bg-white border-gray-300 hover:border-[#111827] hover:bg-gray-50 text-[#111827]';
+                                        if (isChosen) {
+                                          if (opt.score === 4) {
+                                            activeStyle =
+                                              'bg-[#DCFCE7] border-[#15803D] text-[#14532D] shadow-[2px_2px_0px_#15803D]';
+                                          } else if (opt.score === 3) {
+                                            activeStyle =
+                                              'bg-[#DBEAFE] border-[#1D4ED8] text-[#1E3A8A] shadow-[2px_2px_0px_#1D4ED8]';
+                                          } else if (opt.score === 2) {
+                                            activeStyle =
+                                              'bg-[#FEF9C3] border-amber-600 text-amber-900 shadow-[2px_2px_0px_#D97706]';
+                                          } else {
+                                            activeStyle =
+                                              'bg-red-100 border-red-600 text-red-900 shadow-[2px_2px_0px_#DC2626]';
+                                          }
+                                        }
+
+                                        return (
+                                          <button
+                                            key={opt.score}
+                                            type="button"
+                                            onClick={() => handleSetIndicatorScore(ind.key, opt.score)}
+                                            className={`p-2 rounded-xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between ${activeStyle}`}
+                                          >
+                                            <div className="flex items-center justify-between w-full mb-1">
+                                              <span className="font-black text-[10px] uppercase">
+                                                Skor {opt.score} ({opt.label})
+                                              </span>
+                                              <span className="font-mono-code font-black text-[9px] px-1.5 py-0.5 rounded bg-black/10">
+                                                +{((opt.score / 4) * ind.weight).toFixed(0)} poin
+                                              </span>
+                                            </div>
+                                            <p className="text-[10px] font-semibold leading-snug opacity-90">
+                                              {opt.desc}
+                                            </p>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Ambang Rekomendasi Reference Box */}
+                            <div className="bg-[#FFFDF5] border-2 border-dashed border-[#111827]/40 rounded-2xl p-3 text-[10px] space-y-1">
+                              <span className="font-black uppercase text-[#111827] block">
+                                Ambang Rekomendasi Hasil Wawancara:
+                              </span>
+                              <div className="flex items-center justify-between font-bold text-[#15803D]">
+                                <span>• Total Skor Tertimbang ≥ 75 (Lolos Verifikasi)</span>
+                                <span className="font-black">→ DIREKOMENDASIKAN</span>
+                              </div>
+                              <div className="flex items-center justify-between font-bold text-amber-700">
+                                <span>• Total Skor Tertimbang 60 – 74 (Lolos Verifikasi)</span>
+                                <span className="font-black">→ CADANGAN</span>
+                              </div>
+                              <div className="flex items-center justify-between font-bold text-red-700">
+                                <span>• Total Skor Tertimbang &lt; 60, atau GUGUR di Verifikasi Cepat</span>
+                                <span className="font-black">→ TIDAK DIREKOMENDASIKAN</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Sticky Decision & Save Footer */}
+                      <div className="bg-[#EFF6FF] border-t-2 border-[#111827] p-3.5 space-y-2.5 shrink-0">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase text-[#111827]">
+                            Keputusan Status Seleksi & Catatan Pewawancara:
+                          </span>
+                          {evalResult.isAssessed && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (evalResult.recommendation === 'DIREKOMENDASIKAN') {
+                                  setLeaderboardStatus('Diterima');
+                                } else if (evalResult.recommendation === 'CADANGAN') {
+                                  setLeaderboardStatus('Lolos Administrasi');
+                                } else if (evalResult.recommendation === 'TIDAK DIREKOMENDASIKAN') {
+                                  setLeaderboardStatus('Tidak Lolos');
+                                }
+                              }}
+                              className="text-[9px] font-black text-[#1D4ED8] underline cursor-pointer"
+                            >
+                              Sesuaikan Status dgn Rekomendasi
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {[
+                            { val: 'Pending', label: 'Pending' },
+                            { val: 'Lolos Administrasi', label: 'Lolos / Cadangan' },
+                            { val: 'Diterima', label: 'Diterima' },
+                            { val: 'Tidak Lolos', label: 'Gugur' },
+                          ].map((st) => {
+                            let cls = 'bg-white text-gray-700 border-[#111827]/40 hover:bg-gray-50';
+                            if (leaderboardStatus === st.val) {
+                              if (st.val === 'Lolos Administrasi') cls = 'bg-[#15803D] text-white border-[#111827]';
+                              else if (st.val === 'Diterima') cls = 'bg-[#1D4ED8] text-white border-[#111827]';
+                              else if (st.val === 'Tidak Lolos') cls = 'bg-red-600 text-white border-[#111827]';
+                              else cls = 'bg-[#FFD60A] text-[#111827] border-[#111827]';
+                            }
+                            return (
+                              <button
+                                key={st.val}
+                                type="button"
+                                onClick={() => setLeaderboardStatus(st.val)}
+                                className={`py-2 px-1 border-2 rounded-xl font-black text-[9px] uppercase cursor-pointer ${cls}`}
+                              >
+                                {st.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <textarea
+                          value={leaderboardComment}
+                          onChange={(e) => setLeaderboardComment(e.target.value)}
+                          placeholder="Catatan hasil wawancara (temuan verifikasi berkas, kondisi rumah, komitmen kandidat)..."
+                          className="w-full text-xs font-semibold p-2.5 bg-white border-2 border-[#111827] rounded-xl h-14 resize-none"
+                        />
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={handleSaveCurrentInterview}
+                            disabled={savingStatus}
+                            className="btn-secondary py-2.5 text-xs disabled:opacity-75"
+                          >
+                            <span>{savingStatus ? 'Menyimpan...' : 'Simpan Saja'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveAndNext}
+                            disabled={savingStatus}
+                            className="btn-yellow sm:col-span-2 py-2.5 text-xs disabled:opacity-75"
+                          >
+                            {savingStatus ? (
+                              <span>Menyimpan...</span>
+                            ) : (
+                              <>
+                                <span>Simpan & Lanjut Kandidat Berikutnya</span>
+                                <ChevronRight className="w-4 h-4" />
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="bg-white border-[3px] border-[#111827] rounded-3xl p-10 text-center text-gray-500 font-bold text-xs shadow-[4px_4px_0px_#111827]">
+                  Form rubrik wawancara akan tampil di sini setelah kandidat dipilih.
                 </div>
               )}
             </div>
