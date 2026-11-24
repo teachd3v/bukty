@@ -1206,13 +1206,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     <div className="min-h-screen bg-[#FFFDF5] text-[#111827] flex flex-col selection:bg-[#FFD60A] selection:text-[#111827]">
       {/* Sticky Admin Header */}
       <header className="bg-white border-b-[3px] border-[#111827] sticky top-0 z-30">
-        <div
-          className={`${
-            activeTab === 'leaderboard' || activeTab === 'approved'
-              ? 'w-full max-w-none px-4 sm:px-6 lg:px-8'
-              : 'max-w-7xl mx-auto px-4 sm:px-6'
-          } py-3 flex flex-wrap items-center justify-between gap-3 transition-all`}
-        >
+        <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-3 transition-all">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <img src="/logo-ge.png" alt="GREAT Edunesia" className="h-6 object-contain" />
@@ -1258,13 +1252,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
         </div>
       </header>
 
-      <main
-        className={`flex-grow ${
-          activeTab === 'leaderboard' || activeTab === 'approved'
-            ? 'w-full max-w-none px-4 sm:px-6 lg:px-8 py-3'
-            : 'max-w-7xl mx-auto px-4 sm:px-6 py-5'
-        } w-full space-y-6 transition-all`}
-      >
+      <main className="flex-grow w-full max-w-none px-4 sm:px-6 lg:px-8 py-4 space-y-5 transition-all">
         {/* TAB 1: PENDAFTAR */}
         {activeTab === 'list' && (
           <>
