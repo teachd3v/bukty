@@ -47,6 +47,25 @@ import {
 
 const SESSION_KEY = 'bukty_admin_session';
 const LOCAL_SUBMISSIONS_KEY = 'bukty_admin_submissions';
+const ACTIVE_TAB_STORAGE_KEY = 'bukty_admin_active_tab';
+const SELECTED_RANK_ID_STORAGE_KEY = 'bukty_admin_selected_rank_id';
+const VALID_ADMIN_TABS = ['list', 'leaderboard', 'approved', 'announcement'];
+
+function getInitialAdminTab() {
+  try {
+    const hash = window.location.hash || '';
+    if (hash.startsWith('#admin/')) {
+      const subTab = hash.replace('#admin/', '').trim();
+      if (VALID_ADMIN_TABS.includes(subTab)) return subTab;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    if (tabParam && VALID_ADMIN_TABS.includes(tabParam)) return tabParam;
+    const savedTab = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+    if (savedTab && VALID_ADMIN_TABS.includes(savedTab)) return savedTab;
+  } catch (e) {}
+  return 'list';
+}
 
 const DOC_ORDER = [
   'bio',
@@ -114,19 +133,33 @@ export default function AdminDashboard({ onLeaveAdmin }) {
   const [deleteConfirmModal, setDeleteConfirmModal] = useState({ isOpen: false, targetIds: [] });
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Tabs & Leaderboard States
-  const [activeTab, setActiveTab] = useState('list'); // 'list' | 'leaderboard' | 'approved' | 'announcement'
+  // Tabs & Leaderboard States (Persisted across F5 Refresh)
+  const [activeTab, setActiveTabState] = useState(() => getInitialAdminTab()); // 'list' | 'leaderboard' | 'approved' | 'announcement'
   const [onlyQualifiedLeaderboard, setOnlyQualifiedLeaderboard] = useState(true);
   const [selectedLeaderboardItem, setSelectedLeaderboardItem] = useState(null);
   const [activeDocKey, setActiveDocKey] = useState(null);
   const [middlePanelMode, setMiddlePanelMode] = useState('detail'); // 'detail' | 'docs'
-  const [interviewSectionTab, setInterviewSectionTab] = useState('all'); // 'all' | 'bagian1' | 'bagian2'
+  const [interviewSectionTab, setInterviewSectionTab] = useState('bagian1'); // 'bagian1' | 'bagian2' | 'all'
   const [interviewForm, setInterviewForm] = useState(() => createDefaultInterviewState());
   const [savingStatus, setSavingStatus] = useState(false);
   const [leaderboardComment, setLeaderboardComment] = useState('');
   const [leaderboardStatus, setLeaderboardStatus] = useState('Pending');
   const [leaderboardSearchQuery, setLeaderboardSearchQuery] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
+
+  const setActiveTab = (nextTab) => {
+    setActiveTabState(nextTab);
+    try {
+      localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, nextTab);
+      const url = new URL(window.location.href);
+      if (url.pathname.includes('/admin')) {
+        url.searchParams.set('tab', nextTab);
+        window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+      } else {
+        window.history.replaceState(null, '', `${url.pathname}${url.search}#admin/${nextTab}`);
+      }
+    } catch (e) {}
+  };
 
   // Approved Tab States
   const [approvedSearchQuery, setApprovedSearchQuery] = useState('');
@@ -383,6 +416,9 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     setLeaderboardStatus(item.status_seleksi || 'Pending');
     setLeaderboardComment(item.catatan_admin || '');
     setInterviewForm(parseInterviewJson(item.interview_json));
+    try {
+      if (item?.id) localStorage.setItem(SELECTED_RANK_ID_STORAGE_KEY, String(item.id));
+    } catch (e) {}
 
     try {
       if (item.uploaded_files_json) {
@@ -444,7 +480,15 @@ export default function AdminDashboard({ onLeaveAdmin }) {
       if (data.length > 0) {
         const stillExists = selectedLeaderboardItem && data.some((x) => x.id === selectedLeaderboardItem.id);
         if (!stillExists) {
-          handleSelectRankItem(data[0]);
+          let targetCandidate = data[0];
+          try {
+            const savedId = localStorage.getItem(SELECTED_RANK_ID_STORAGE_KEY);
+            if (savedId) {
+              const foundSaved = data.find((x) => String(x.id) === String(savedId));
+              if (foundSaved) targetCandidate = foundSaved;
+            }
+          } catch (e) {}
+          handleSelectRankItem(targetCandidate);
         } else {
           const current = data.find((x) => x.id === selectedLeaderboardItem.id);
           setLeaderboardStatus(current.status_seleksi || 'Pending');
@@ -911,8 +955,10 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
       <main
         className={`flex-grow ${
-          activeTab === 'leaderboard' ? 'max-w-[1920px]' : 'max-w-7xl'
-        } mx-auto w-full px-4 sm:px-6 py-5 space-y-6 transition-all`}
+          activeTab === 'leaderboard'
+            ? 'w-full max-w-none px-4 sm:px-6 lg:px-8 py-3'
+            : 'max-w-7xl mx-auto px-4 sm:px-6 py-5'
+        } w-full space-y-6 transition-all`}
       >
         {/* TAB 1: PENDAFTAR */}
         {activeTab === 'list' && (
@@ -1186,13 +1232,13 @@ export default function AdminDashboard({ onLeaveAdmin }) {
           </>
         )}
 
-        {/* TAB 2: LEADERBOARD SPLIT-SCREEN FAST VERIFIER & INTERVIEW RUBRIC */}
+        {/* TAB 2: LEADERBOARD COCKPIT — LOW-SCROLL FAST VERIFIER & INTERVIEW RUBRIC */}
         {activeTab === 'leaderboard' && (
-          <div className="grid grid-cols-1 lg:grid-cols-[290px_minmax(0,1fr)_minmax(0,1.25fr)] xl:grid-cols-[320px_minmax(0,1fr)_minmax(0,1.3fr)] gap-5 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_minmax(0,1.35fr)] xl:grid-cols-[310px_minmax(0,1fr)_minmax(0,1.4fr)] gap-4 items-stretch">
             {/* COLUMN 1 (LEFT): Ranking List */}
-            <div className="min-w-0 space-y-4">
-              <div className="bg-white border-[3px] border-[#111827] p-3.5 rounded-3xl shadow-[4px_4px_0px_#111827]">
-                <div className="flex items-center justify-between mb-2.5 gap-2 flex-wrap">
+            <div className="min-w-0">
+              <div className="bg-white border-[3px] border-[#111827] p-3 rounded-3xl shadow-[4px_4px_0px_#111827] flex flex-col lg:h-[calc(100vh-88px)]">
+                <div className="flex items-center justify-between mb-2 gap-2 flex-wrap shrink-0">
                   <h4 className="font-black text-xs sm:text-sm flex items-center gap-1.5">
                     <Trophy className="w-4 h-4 text-[#1D4ED8]" />
                     <span>Leaderboard ({getLeaderboardData().length})</span>
@@ -1209,7 +1255,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                 </div>
 
                 {/* Toggle Qualified Filter */}
-                <label className="flex items-center gap-2 mb-2.5 bg-[#EFF6FF] border border-[#111827] px-2.5 py-2 rounded-xl text-[10px] font-extrabold cursor-pointer">
+                <label className="flex items-center gap-2 mb-2 bg-[#EFF6FF] border border-[#111827] px-2.5 py-1.5 rounded-xl text-[10px] font-extrabold cursor-pointer shrink-0">
                   <input
                     type="checkbox"
                     checked={onlyQualifiedLeaderboard}
@@ -1219,18 +1265,18 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   <span>Filter Ketat BUKTY (MS Syarat Utama)</span>
                 </label>
 
-                <div className="relative mb-2.5">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-400" />
+                <div className="relative mb-2 shrink-0">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-2 text-gray-400" />
                   <input
                     type="text"
                     placeholder="Cari nama / kampus / reg..."
                     value={leaderboardSearchQuery}
                     onChange={(e) => setLeaderboardSearchQuery(e.target.value)}
-                    className="form-input pl-8 pr-3 py-1.5 text-xs font-bold"
+                    className="form-input pl-8 pr-3 py-1 text-xs font-bold"
                   />
                 </div>
 
-                <div className="max-h-[650px] overflow-y-auto space-y-2 pr-1">
+                <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 max-h-[520px] lg:max-h-none">
                   {getLeaderboardData().length === 0 ? (
                     <div className="p-8 text-center text-gray-500 font-bold text-xs">
                       Belum ada pendaftar pada filter leaderboard ini.
@@ -1265,13 +1311,13 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                         <div
                           key={item.id}
                           onClick={() => handleSelectRankItem(item)}
-                          className={`p-2.5 rounded-2xl border-2 cursor-pointer transition-all shadow-[2px_2px_0px_#111827] ${
+                          className={`p-2 rounded-2xl border-2 cursor-pointer transition-all shadow-[2px_2px_0px_#111827] ${
                             isSelected ? 'bg-[#EFF6FF] border-[#1D4ED8]' : 'bg-white border-[#111827]/40 hover:bg-[#FFFDF5]'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 min-w-0">
-                              <div className="w-6 h-6 rounded-lg bg-[#FFD60A] text-[#111827] font-mono-code font-black border-2 border-[#111827] flex items-center justify-center text-[11px] shrink-0">
+                              <div className="w-6 h-6 rounded-lg bg-[#FFD60A] text-[#111827] font-mono-code font-black border-2 border-[#111827] flex items-center justify-center text-[10px] shrink-0">
                                 {index + 1}
                               </div>
                               <div className="min-w-0">
@@ -1292,7 +1338,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-between gap-1 mt-1.5 pt-1.5 border-t border-gray-200/70">
+                          <div className="flex items-center justify-between gap-1 mt-1 pt-1 border-t border-gray-200/70">
                             <div className="flex items-center gap-1 min-w-0">
                               <span className="text-[8px] font-black text-[#1D4ED8] font-mono-code">{item.reg_id}</span>
                               <span className="text-[8px] font-black px-1 bg-[#FEF9C3] border border-[#111827] rounded truncate">
@@ -1324,7 +1370,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
             </div>
 
             {/* COLUMN 2 (MIDDLE): Candidate Detail & Inline Document Viewer Combined */}
-            <div className="min-w-0 space-y-4">
+            <div className="min-w-0">
               {selectedLeaderboardItem ? (
                 (() => {
                   let uploadedFiles = {};
@@ -1350,69 +1396,62 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   const isImage = fileObj?.name && /\.(jpe?g|png|webp|gif)$/i.test(fileObj.name);
 
                   return (
-                    <div className="bg-white border-[3px] border-[#111827] rounded-3xl shadow-[4px_4px_0px_#111827] overflow-hidden flex flex-col max-h-[820px]">
+                    <div className="bg-white border-[3px] border-[#111827] rounded-3xl shadow-[4px_4px_0px_#111827] overflow-hidden flex flex-col lg:h-[calc(100vh-88px)]">
                       {/* Candidate Identity Header */}
-                      <div className="bg-[#1D4ED8] text-white border-b-2 border-[#111827] p-3.5 shrink-0">
-                        <div className="flex items-center justify-between">
-                          <span className="font-black text-[#FFD60A] font-mono-code text-xs">
-                            {selectedLeaderboardItem.reg_id}
-                          </span>
-                          <span className="px-2 py-0.5 rounded bg-[#FFD60A] text-[#111827] text-[10px] font-black">
-                            {selectedLeaderboardItem.status_yatim || '-'}
-                          </span>
-                        </div>
-                        <h3 className="font-black text-sm uppercase mt-1 truncate">{selectedLeaderboardItem.nama}</h3>
-                        <p className="text-[10px] font-bold text-blue-100 truncate">
-                          {selectedLeaderboardItem.perguruan_tinggi} ({selectedLeaderboardItem.jenis_pt || 'PTN'}) •{' '}
-                          {selectedLeaderboardItem.provinsi}
-                        </p>
+                      <div className="bg-[#1D4ED8] text-white border-b-2 border-[#111827] px-3.5 py-2.5 shrink-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-black text-[#FFD60A] font-mono-code text-[11px]">
+                                {selectedLeaderboardItem.reg_id}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded bg-[#FFD60A] text-[#111827] text-[9px] font-black">
+                                {selectedLeaderboardItem.status_yatim || '-'}
+                              </span>
+                            </div>
+                            <h3 className="font-black text-sm uppercase mt-0.5 truncate">
+                              {selectedLeaderboardItem.nama}
+                            </h3>
+                            <p className="text-[10px] font-bold text-blue-100 truncate">
+                              {selectedLeaderboardItem.perguruan_tinggi} ({selectedLeaderboardItem.jenis_pt || 'PTN'}) •{' '}
+                              {selectedLeaderboardItem.provinsi}
+                            </p>
+                          </div>
 
-                        {/* Middle Column Mode Switcher: Data Detail vs Pratinjau Berkas */}
-                        <div className="grid grid-cols-2 gap-1.5 mt-3 bg-[#1E3A8A] p-1 rounded-xl border border-[#111827]">
-                          <button
-                            type="button"
-                            onClick={() => setMiddlePanelMode('detail')}
-                            className={`py-1.5 px-2 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                              middlePanelMode === 'detail'
-                                ? 'bg-[#FFD60A] text-[#111827] shadow-[1.5px_1.5px_0px_#111827]'
-                                : 'text-blue-100 hover:text-white'
-                            }`}
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>Data Detail</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setMiddlePanelMode('docs')}
-                            className={`py-1.5 px-2 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                              middlePanelMode === 'docs'
-                                ? 'bg-[#FFD60A] text-[#111827] shadow-[1.5px_1.5px_0px_#111827]'
-                                : 'text-blue-100 hover:text-white'
-                            }`}
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span>Pratinjau Berkas ({fileKeys.length})</span>
-                          </button>
+                          {/* Compact Mode Switcher: Data Detail vs Pratinjau Berkas */}
+                          <div className="flex bg-[#1E3A8A] p-1 rounded-xl border border-[#111827] shrink-0 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setMiddlePanelMode('detail')}
+                              className={`py-1.5 px-2.5 rounded-lg font-black text-[10px] uppercase flex items-center gap-1 cursor-pointer transition-all ${
+                                middlePanelMode === 'detail'
+                                  ? 'bg-[#FFD60A] text-[#111827] shadow-[1px_1px_0px_#111827]'
+                                  : 'text-blue-100 hover:text-white'
+                              }`}
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>Detail</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMiddlePanelMode('docs')}
+                              className={`py-1.5 px-2.5 rounded-lg font-black text-[10px] uppercase flex items-center gap-1 cursor-pointer transition-all ${
+                                middlePanelMode === 'docs'
+                                  ? 'bg-[#FFD60A] text-[#111827] shadow-[1px_1px_0px_#111827]'
+                                  : 'text-blue-100 hover:text-white'
+                              }`}
+                            >
+                              <FileText className="w-3 h-3" />
+                              <span>Berkas ({fileKeys.length})</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
 
                       {/* Quick Document Selector Strip (Always accessible in Middle Column) */}
-                      <div className="bg-[#FFFDF5] border-b-2 border-[#111827] px-3 py-2 shrink-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[9px] font-black uppercase text-gray-500">
-                            Pintasan Berkas Pendaftar (Klik untuk Pratinjau):
-                          </span>
-                          {middlePanelMode === 'docs' && (
-                            <button
-                              type="button"
-                              onClick={() => setMiddlePanelMode('detail')}
-                              className="text-[9px] font-black text-[#1D4ED8] underline cursor-pointer"
-                            >
-                              Kembali ke Data Detail
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-1">
+                      <div className="bg-[#FFFDF5] border-b-2 border-[#111827] px-3 py-1.5 shrink-0">
+                        <div className="flex flex-wrap gap-1 items-center">
+                          <span className="text-[9px] font-black uppercase text-gray-500 mr-1">Berkas:</span>
                           {fileKeys.length === 0 ? (
                             <span className="text-[10px] text-gray-400 font-bold">Tidak ada berkas diunggah.</span>
                           ) : (
@@ -1424,7 +1463,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                   setActiveDocKey(k);
                                   setMiddlePanelMode('docs');
                                 }}
-                                className={`px-2 py-0.5 border border-[#111827] rounded-lg font-black text-[9px] uppercase cursor-pointer transition-colors ${
+                                className={`px-1.5 py-0.5 border border-[#111827] rounded-md font-black text-[9px] uppercase cursor-pointer transition-colors ${
                                   middlePanelMode === 'docs' && activeDocKey === k
                                     ? 'bg-[#1D4ED8] text-white'
                                     : 'bg-white hover:bg-[#FEF9C3] text-[#111827]'
@@ -1439,146 +1478,166 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
                       {/* MODE A: CANDIDATE DATA DETAIL */}
                       {middlePanelMode === 'detail' ? (
-                        <div className="p-3.5 overflow-y-auto space-y-3.5 flex-grow text-xs">
+                        <div className="p-3 overflow-y-auto space-y-2.5 flex-grow text-xs">
                           {/* Eligibility Flags Warning if TMS */}
                           {!selectedLeaderboardItem.eligibility.isQualified && (
-                            <div className="bg-red-50 border-2 border-red-500 p-2.5 rounded-xl text-[11px] font-bold text-red-700">
+                            <div className="bg-red-50 border-2 border-red-500 p-2 rounded-xl text-[10px] font-bold text-red-700">
                               <strong>Catatan Auto-Screening (TMS):</strong>{' '}
                               {selectedLeaderboardItem.eligibility.flags.join(' • ')}
                             </div>
                           )}
 
-                          {/* BUKTY 35/45/20 Score Breakdown */}
-                          <div className="bg-[#EFF6FF] p-3 rounded-2xl border-2 border-[#111827] space-y-1.5 text-[11px]">
-                            <h5 className="font-black text-[10px] text-[#1D4ED8] uppercase tracking-wider">
-                              Skor Prioritas Administrasi BUKTY (35 / 45 / 20)
-                            </h5>
-                            <div className="flex justify-between font-bold">
-                              <span>Status Yatim (35%):</span>
-                              <span className="font-mono-code font-black">
-                                {(selectedLeaderboardItem.score_yatim * 0.35).toFixed(2)} / 35
+                          {/* Compact BUKTY Score Pill Bar */}
+                          <div className="bg-[#EFF6FF] p-2.5 rounded-2xl border-2 border-[#111827] text-[10px]">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-black text-[#1D4ED8] uppercase">
+                                Skor Prioritas BUKTY (35/45/20)
+                              </span>
+                              <span className="font-mono-code font-black text-xs text-[#1D4ED8]">
+                                Total: {selectedLeaderboardItem.score_total} / 100
                               </span>
                             </div>
-                            <div className="flex justify-between font-bold">
-                              <span>Rasio Beban UKT (45%):</span>
-                              <span className="font-mono-code font-black">
-                                {(selectedLeaderboardItem.score_ratio * 0.45).toFixed(2)} / 45
-                              </span>
-                            </div>
-                            <div className="flex justify-between font-bold">
-                              <span>Jumlah Tanggungan (20%):</span>
-                              <span className="font-mono-code font-black">
-                                {(selectedLeaderboardItem.score_tanggungan * 0.2).toFixed(2)} / 20
-                              </span>
-                            </div>
-                            <div className="border-t-2 border-[#111827]/20 pt-1.5 flex justify-between font-black text-xs text-[#1D4ED8]">
-                              <span>Skor Total BUKTY:</span>
-                              <span className="font-mono-code">{selectedLeaderboardItem.score_total} / 100</span>
+                            <div className="grid grid-cols-3 gap-1.5 text-center font-bold">
+                              <div className="bg-white border border-[#111827]/20 rounded-lg py-1 px-1.5">
+                                <span className="text-[9px] text-gray-500 block">Yatim (35%)</span>
+                                <span className="font-mono-code font-black">
+                                  {(selectedLeaderboardItem.score_yatim * 0.35).toFixed(1)}
+                                </span>
+                              </div>
+                              <div className="bg-white border border-[#111827]/20 rounded-lg py-1 px-1.5">
+                                <span className="text-[9px] text-gray-500 block">Rasio UKT (45%)</span>
+                                <span className="font-mono-code font-black">
+                                  {(selectedLeaderboardItem.score_ratio * 0.45).toFixed(1)}
+                                </span>
+                              </div>
+                              <div className="bg-white border border-[#111827]/20 rounded-lg py-1 px-1.5">
+                                <span className="text-[9px] text-gray-500 block">Tanggungan (20%)</span>
+                                <span className="font-mono-code font-black">
+                                  {(selectedLeaderboardItem.score_tanggungan * 0.2).toFixed(1)}
+                                </span>
+                              </div>
                             </div>
                           </div>
 
-                          {/* Key Academic & Economy Stats */}
-                          <div className="grid grid-cols-2 gap-2 bg-[#FFFDF5] p-3 rounded-2xl border border-[#111827]/30 font-bold">
+                          {/* Key Academic & Economy Stats (4-Grid Compact) */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-[#FFFDF5] p-2.5 rounded-2xl border border-[#111827]/30 font-bold text-[11px]">
                             <div>
-                              <span className="text-[10px] text-gray-500 block">IPK / Rapor</span>
+                              <span className="text-[9px] text-gray-500 block">IPK / Rapor</span>
                               <strong className="text-[#1D4ED8]">{selectedLeaderboardItem.ipk}</strong>
                             </div>
                             <div>
-                              <span className="text-[10px] text-gray-500 block">Nominal UKT & Status</span>
+                              <span className="text-[9px] text-gray-500 block">Nominal UKT</span>
                               <strong className="text-[#15803D]">Rp {selectedLeaderboardItem.nominal_ukt}</strong>
-                              <span className="block text-[10px] text-gray-600">
+                              <span className="block text-[9px] text-gray-500">
                                 ({selectedLeaderboardItem.status_ukt || '-'})
                               </span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-gray-500 block">Penghasilan Ortu</span>
-                              <strong>Rp {selectedLeaderboardItem.penghasilan_ortu}/bln</strong>
+                              <span className="text-[9px] text-gray-500 block">Penghasilan Ortu</span>
+                              <strong>Rp {selectedLeaderboardItem.penghasilan_ortu}</strong>
                             </div>
                             <div>
-                              <span className="text-[10px] text-gray-500 block">Tanggungan / Rumah</span>
+                              <span className="text-[9px] text-gray-500 block">Tanggungan / Rumah</span>
                               <strong>
-                                {selectedLeaderboardItem.jumlah_tanggungan} Jiwa / {selectedLeaderboardItem.status_rumah}
+                                {selectedLeaderboardItem.jumlah_tanggungan} / {selectedLeaderboardItem.status_rumah}
                               </strong>
                             </div>
                           </div>
 
-                          {/* Bio & Sosial */}
-                          <div className="space-y-1.5 font-bold">
+                          {/* Bio & Sosial in 2-Column Compact Grid */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 font-bold text-[11px] bg-white p-2.5 rounded-2xl border border-gray-200">
                             <div>
-                              <span className="text-gray-500">NIK / TTL:</span> {selectedLeaderboardItem.nik} /{' '}
-                              {selectedLeaderboardItem.ttl}
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Gender / Agama:</span> {selectedLeaderboardItem.gender} /{' '}
-                              <span className="px-1.5 py-0.5 bg-[#DCFCE7] text-[#15803D] rounded text-[10px] font-black">
-                                {selectedLeaderboardItem.agama}
+                              <span className="text-gray-500 text-[10px] block">NIK / TTL:</span>
+                              <span>
+                                {selectedLeaderboardItem.nik} • {selectedLeaderboardItem.ttl}
                               </span>
                             </div>
                             <div>
-                              <span className="text-gray-500">Kampus / NIM:</span>{' '}
-                              {selectedLeaderboardItem.perguruan_tinggi} ({selectedLeaderboardItem.nim || '-'})
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Prodi / Jenjang:</span>{' '}
-                              {selectedLeaderboardItem.fakultas_prodi} (
-                              <span className="text-[#1D4ED8] font-black">{selectedLeaderboardItem.jenjang}</span> - Sem{' '}
-                              {selectedLeaderboardItem.semester})
-                            </div>
-                            <div>
-                              <span className="text-gray-500">WA / Email:</span> {selectedLeaderboardItem.no_hp} /{' '}
-                              {selectedLeaderboardItem.email}
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Domisili:</span> {selectedLeaderboardItem.alamat_domisili}
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Ortu / Kondisi:</span> {selectedLeaderboardItem.nama_ortu}{' '}
-                              ({selectedLeaderboardItem.pekerjaan_ortu} — {selectedLeaderboardItem.kondisi_pekerjaan})
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Kondisi Khusus:</span>{' '}
-                              {selectedLeaderboardItem.kondisi_khusus}
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Beasiswa Lain:</span>{' '}
-                              {selectedLeaderboardItem.sedang_beasiswa_lain}{' '}
-                              {selectedLeaderboardItem.detail_beasiswa_lain &&
-                                `(${selectedLeaderboardItem.detail_beasiswa_lain})`}
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Rekening:</span> {selectedLeaderboardItem.bank_rekening} -{' '}
-                              {selectedLeaderboardItem.nomor_rekening} a.n {selectedLeaderboardItem.atas_nama_rekening}
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Program Sosial DD / Publikasi:</span>{' '}
-                              {selectedLeaderboardItem.bersedia_program_sosial} /{' '}
-                              {selectedLeaderboardItem.bersedia_publikasi}
-                            </div>
-                            {selectedLeaderboardItem.kendala_ukt && (
-                              <div className="bg-[#FFFDF5] p-2.5 rounded-xl border border-gray-200">
-                                <span className="block text-[10px] text-gray-500 uppercase">Kendala & Upaya UKT:</span>
-                                <p className="text-[11px] font-semibold mt-0.5 whitespace-pre-wrap">
-                                  {selectedLeaderboardItem.kendala_ukt} — {selectedLeaderboardItem.upaya_ukt}
-                                </p>
-                              </div>
-                            )}
-                            {selectedLeaderboardItem.pengalaman_sosial && (
-                              <div className="bg-[#FFFDF5] p-2.5 rounded-xl border border-gray-200 mt-1">
-                                <span className="block text-[10px] text-gray-500 uppercase">
-                                  Pengalaman Aktivitas Sosial:
+                              <span className="text-gray-500 text-[10px] block">Gender / Agama:</span>
+                              <span>
+                                {selectedLeaderboardItem.gender} •{' '}
+                                <span className="px-1.5 py-0.5 bg-[#DCFCE7] text-[#15803D] rounded text-[10px] font-black">
+                                  {selectedLeaderboardItem.agama}
                                 </span>
-                                <p className="text-[11px] font-semibold mt-0.5 whitespace-pre-wrap">
-                                  {selectedLeaderboardItem.pengalaman_sosial}
-                                </p>
-                              </div>
-                            )}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 text-[10px] block">Kampus / NIM:</span>
+                              <span>
+                                {selectedLeaderboardItem.perguruan_tinggi} ({selectedLeaderboardItem.nim || '-'})
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 text-[10px] block">Prodi / Jenjang:</span>
+                              <span>
+                                {selectedLeaderboardItem.fakultas_prodi} (
+                                <strong className="text-[#1D4ED8]">{selectedLeaderboardItem.jenjang}</strong> - Sem{' '}
+                                {selectedLeaderboardItem.semester})
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 text-[10px] block">No. WA / Email:</span>
+                              <span className="break-all">
+                                {selectedLeaderboardItem.no_hp} • {selectedLeaderboardItem.email}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 text-[10px] block">Ortu / Pekerjaan:</span>
+                              <span>
+                                {selectedLeaderboardItem.nama_ortu} ({selectedLeaderboardItem.pekerjaan_ortu} —{' '}
+                                {selectedLeaderboardItem.kondisi_pekerjaan})
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 text-[10px] block">Kondisi Khusus & Beasiswa Lain:</span>
+                              <span>
+                                {selectedLeaderboardItem.kondisi_khusus} • Beasiswa:{' '}
+                                {selectedLeaderboardItem.sedang_beasiswa_lain}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 text-[10px] block">Rekening & Komitmen DD:</span>
+                              <span>
+                                {selectedLeaderboardItem.bank_rekening} {selectedLeaderboardItem.nomor_rekening} • Sosial:{' '}
+                                {selectedLeaderboardItem.bersedia_program_sosial}
+                              </span>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <span className="text-gray-500 text-[10px] block">Alamat Domisili:</span>
+                              <span>{selectedLeaderboardItem.alamat_domisili}</span>
+                            </div>
                           </div>
+
+                          {(selectedLeaderboardItem.kendala_ukt || selectedLeaderboardItem.pengalaman_sosial) && (
+                            <div className="grid grid-cols-1 gap-2">
+                              {selectedLeaderboardItem.kendala_ukt && (
+                                <div className="bg-[#FFFDF5] p-2 rounded-xl border border-gray-200">
+                                  <span className="block text-[9px] font-black text-gray-500 uppercase">
+                                    Kendala & Upaya UKT:
+                                  </span>
+                                  <p className="text-[11px] font-semibold mt-0.5 whitespace-pre-wrap">
+                                    {selectedLeaderboardItem.kendala_ukt} — {selectedLeaderboardItem.upaya_ukt}
+                                  </p>
+                                </div>
+                              )}
+                              {selectedLeaderboardItem.pengalaman_sosial && (
+                                <div className="bg-[#FFFDF5] p-2 rounded-xl border border-gray-200">
+                                  <span className="block text-[9px] font-black text-gray-500 uppercase">
+                                    Pengalaman Aktivitas Sosial:
+                                  </span>
+                                  <p className="text-[11px] font-semibold mt-0.5 whitespace-pre-wrap">
+                                    {selectedLeaderboardItem.pengalaman_sosial}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         /* MODE B: INLINE DOCUMENT PREVIEW IN MIDDLE COLUMN */
-                        <div className="p-3 flex-grow flex flex-col overflow-hidden">
+                        <div className="p-2.5 flex-grow flex flex-col overflow-hidden">
                           {fileObj && fileUrl && fileUrl !== '#' ? (
-                            <div className="bg-white border-2 border-[#111827] rounded-2xl overflow-hidden flex flex-col flex-grow h-[580px]">
+                            <div className="bg-white border-2 border-[#111827] rounded-2xl overflow-hidden flex flex-col flex-grow h-full min-h-[480px]">
                               <div className="bg-[#EFF6FF] border-b border-[#111827] px-3 py-1.5 flex items-center justify-between text-[11px] font-bold shrink-0">
                                 <div className="flex items-center gap-1.5 min-w-0">
                                   <span className="px-1.5 py-0.5 bg-[#1D4ED8] text-white rounded text-[9px] font-black uppercase shrink-0">
@@ -1615,7 +1674,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                               </div>
                             </div>
                           ) : (
-                            <div className="bg-[#FFFDF5] border-2 border-dashed border-gray-300 rounded-2xl p-8 text-center text-gray-400 font-bold text-xs flex-grow flex items-center justify-center h-[580px]">
+                            <div className="bg-[#FFFDF5] border-2 border-dashed border-gray-300 rounded-2xl p-8 text-center text-gray-400 font-bold text-xs flex-grow flex items-center justify-center">
                               Pilih salah satu tombol berkas di atas untuk pratinjau dokumen.
                             </div>
                           )}
@@ -1631,8 +1690,8 @@ export default function AdminDashboard({ onLeaveAdmin }) {
               )}
             </div>
 
-            {/* COLUMN 3 (RIGHT): FORM RUBRIK WAWANCARA & PENILAIAN */}
-            <div className="min-w-0 space-y-4">
+            {/* COLUMN 3 (RIGHT): FORM RUBRIK WAWANCARA & PENILAIAN (LOW-SCROLL COCKPIT) */}
+            <div className="min-w-0">
               {selectedLeaderboardItem ? (
                 (() => {
                   const evalResult = calculateInterviewEvaluation(interviewForm);
@@ -1644,7 +1703,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                     }
                   } catch (e) {}
 
-                  let bannerBg = 'bg-gray-100 border-gray-400 text-gray-800';
+                  let bannerBg = 'bg-white border-[#111827] text-gray-800';
                   let badgeBg = 'bg-gray-700 text-white';
                   if (evalResult.recommendationColor === 'green') {
                     bannerBg = 'bg-[#DCFCE7] border-[#15803D] text-[#14532D]';
@@ -1658,85 +1717,60 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   }
 
                   return (
-                    <div className="bg-white border-[3px] border-[#111827] rounded-3xl shadow-[4px_4px_0px_#111827] overflow-hidden flex flex-col max-h-[820px]">
-                      {/* Header Form Wawancara */}
-                      <div className="bg-[#FFD60A] border-b-2 border-[#111827] p-3.5 shrink-0">
-                        <div className="flex items-center justify-between gap-2">
+                    <div className="bg-white border-[3px] border-[#111827] rounded-3xl shadow-[4px_4px_0px_#111827] overflow-hidden flex flex-col lg:h-[calc(100vh-88px)]">
+                      {/* Compact Header Form Wawancara */}
+                      <div className="bg-[#FFD60A] border-b-2 border-[#111827] px-3.5 py-2.5 shrink-0 space-y-2">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
                           <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-xl bg-[#111827] text-[#FFD60A] flex items-center justify-center shrink-0">
-                              <ClipboardCheck className="w-4 h-4" />
+                            <div className="w-6 h-6 rounded-lg bg-[#111827] text-[#FFD60A] flex items-center justify-center shrink-0">
+                              <ClipboardCheck className="w-3.5 h-3.5" />
                             </div>
-                            <div>
-                              <h4 className="font-black text-xs sm:text-sm text-[#111827] leading-tight">
-                                Form Rubrik Wawancara BUKTY
-                              </h4>
-                              <p className="text-[10px] font-bold text-gray-800">
-                                Verifikasi Kelayakan Akhir & Penilaian Terbobot (Skala 1–4)
-                              </p>
-                            </div>
+                            <h4 className="font-black text-xs sm:text-sm text-[#111827]">
+                              Form Rubrik Wawancara BUKTY
+                            </h4>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={handleResetInterviewForm}
-                            className="px-2 py-1 bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border border-[#111827] rounded-lg text-[9px] font-black flex items-center gap-1 cursor-pointer"
-                            title="Reset isian form wawancara"
-                          >
-                            <RotateCcw className="w-3 h-3" />
-                            <span>Reset</span>
-                          </button>
-                        </div>
-
-                        {/* Live Score & Recommendation Banner */}
-                        <div className={`mt-2.5 p-2.5 rounded-2xl border-2 ${bannerBg} transition-all`}>
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="flex items-center gap-1.5">
-                              <Award className="w-4 h-4 shrink-0" />
-                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${badgeBg}`}>
+                          {/* Live Score Pill & Reset inline */}
+                          <div className="flex items-center gap-1.5">
+                            <div className={`px-2.5 py-1 rounded-xl border-2 flex items-center gap-2 ${bannerBg}`}>
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${badgeBg}`}>
                                 {evalResult.recommendation}
                               </span>
-                            </div>
-                            <div className="text-right font-mono-code">
-                              <span className="text-[10px] font-bold mr-1">Skor Tertimbang:</span>
-                              <span className="text-sm font-black">{evalResult.totalWeightedScore}</span>
-                              <span className="text-[10px] font-bold">/100</span>
-                            </div>
-                          </div>
-                          <p className="text-[10px] font-bold mt-1 leading-snug">{evalResult.recommendationDesc}</p>
-                          <div className="flex items-center justify-between text-[9px] font-extrabold mt-1.5 pt-1 border-t border-black/10">
-                            <span>
-                              Bagian 1: {evalResult.passedCount}/{INTERVIEW_VERIFICATION_ITEMS.length} Sesuai
-                              {evalResult.failedCount > 0 ? ` (${evalResult.failedCount} Gugur)` : ''}
-                            </span>
-                            <span>
-                              Bagian 2: {evalResult.scoredIndicatorsCount}/{INTERVIEW_SCORING_RUBRIC.length} Indikator Dinilai
-                            </span>
-                            {interviewForm.uktPaymentStatus && (
-                              <span className="px-1.5 py-0.5 rounded bg-white/80 border border-black/20">
-                                UKT: {interviewForm.uktPaymentStatus} BAYAR
+                              <span className="font-mono-code text-xs font-black">
+                                {evalResult.totalWeightedScore}
+                                <span className="text-[10px] font-bold opacity-75">/100</span>
                               </span>
-                            )}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={handleResetInterviewForm}
+                              className="p-1.5 bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border border-[#111827] rounded-xl text-[9px] font-black cursor-pointer"
+                              title="Reset isian form wawancara"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
 
-                        {/* Filter View Section Tabs: Semua | Bagian 1 | Bagian 2 */}
-                        <div className="grid grid-cols-3 gap-1 mt-2.5 bg-white/70 p-1 rounded-xl border border-[#111827]">
+                        {/* Section Switcher: Bagian 1 (Default) | Bagian 2 | Semua */}
+                        <div className="grid grid-cols-3 gap-1 bg-white/80 p-1 rounded-xl border border-[#111827]">
                           {[
-                            { key: 'all', label: 'Semua Bagian' },
                             {
                               key: 'bagian1',
-                              label: `Bagian 1 (${evalResult.verifiedCount}/${INTERVIEW_VERIFICATION_ITEMS.length})`,
+                              label: `1. Verifikasi Dokumen (${evalResult.passedCount}/${INTERVIEW_VERIFICATION_ITEMS.length})`,
                             },
                             {
                               key: 'bagian2',
-                              label: `Bagian 2 (${evalResult.scoredIndicatorsCount}/${INTERVIEW_SCORING_RUBRIC.length})`,
+                              label: `2. Skoring 1–4 (${evalResult.scoredIndicatorsCount}/${INTERVIEW_SCORING_RUBRIC.length})`,
                             },
+                            { key: 'all', label: 'Tampilkan Semua' },
                           ].map((st) => (
                             <button
                               key={st.key}
                               type="button"
                               onClick={() => setInterviewSectionTab(st.key)}
-                              className={`py-1 px-2 rounded-lg font-black text-[10px] cursor-pointer transition-all ${
+                              className={`py-1 px-2 rounded-lg font-black text-[10px] cursor-pointer transition-all truncate ${
                                 interviewSectionTab === st.key
                                   ? 'bg-[#1D4ED8] text-white shadow-[1px_1px_0px_#111827]'
                                   : 'text-[#111827] hover:bg-white'
@@ -1748,50 +1782,45 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                         </div>
                       </div>
 
-                      {/* Scrollable Rubric Content */}
-                      <div className="p-3.5 overflow-y-auto space-y-5 flex-grow text-xs">
+                      {/* Scrollable Rubric Content (Compact & Low-Scroll) */}
+                      <div className="p-3 overflow-y-auto space-y-3 flex-grow text-xs">
                         {/* ============================================================
-                            BAGIAN 1: VERIFIKASI DOKUMEN & KELAYAKAN AKHIR (8 POIN)
+                            BAGIAN 1: VERIFIKASI DOKUMEN & KELAYAKAN AKHIR (2-COL GRID)
                            ============================================================ */}
-                        {(interviewSectionTab === 'all' || interviewSectionTab === 'bagian1') && (
-                          <div className="space-y-2.5">
-                            <div className="flex items-center justify-between gap-2 bg-[#EFF6FF] border-2 border-[#111827] px-3 py-2 rounded-2xl">
-                              <div>
-                                <h5 className="font-black text-[11px] text-[#1D4ED8] uppercase">
-                                  Bagian 1 — Verifikasi Dokumen & Kelayakan Akhir
-                                </h5>
-                                <p className="text-[10px] font-semibold text-gray-600">
-                                  Jika ada item yang ditandai <strong>Gugur</strong>, kandidat otomatis Tidak Direkomendasikan.
-                                </p>
-                              </div>
+                        {(interviewSectionTab === 'bagian1' || interviewSectionTab === 'all') && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2 bg-[#EFF6FF] border border-[#111827] px-2.5 py-1.5 rounded-xl">
+                              <span className="font-black text-[10px] text-[#1D4ED8] uppercase">
+                                Bagian 1 — 8 Ceklis Verifikasi Kelayakan Akhir (1 Gugur = Tidak Direkomendasikan)
+                              </span>
                               <button
                                 type="button"
                                 onClick={handleMarkAllVerificationPass}
-                                className="px-2 py-1 bg-[#DCFCE7] hover:bg-[#15803D] text-[#15803D] hover:text-white border border-[#15803D] rounded-lg text-[9px] font-black shrink-0 cursor-pointer transition-colors"
+                                className="px-2 py-0.5 bg-[#DCFCE7] hover:bg-[#15803D] text-[#15803D] hover:text-white border border-[#15803D] rounded-lg text-[9px] font-black shrink-0 cursor-pointer transition-colors"
                               >
                                 ✓ Lolos Semua
                               </button>
                             </div>
 
-                            <div className="space-y-2">
+                            {/* 2-Column Grid for 8 Verification Items -> Fits on 1 Screen! */}
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
                               {INTERVIEW_VERIFICATION_ITEMS.map((item) => {
                                 const currentVal = interviewForm.verifications?.[item.key] || null;
                                 let cardBorder = 'border-[#111827]/30 bg-[#FFFDF5]';
-                                if (currentVal === 'pass') cardBorder = 'border-[#15803D] bg-[#DCFCE7]/30';
+                                if (currentVal === 'pass') cardBorder = 'border-[#15803D] bg-[#DCFCE7]/35';
                                 else if (currentVal === 'fail') cardBorder = 'border-red-600 bg-red-50';
 
-                                // Contextual candidate form data for quick reference
                                 let quickContext = null;
                                 if (item.key === 'identitas_kampus') {
                                   quickContext = `${selectedLeaderboardItem.nama} • ${selectedLeaderboardItem.perguruan_tinggi}`;
                                 } else if (item.key === 'status_yatim') {
-                                  quickContext = `Form: ${selectedLeaderboardItem.status_yatim} (Ortu: ${selectedLeaderboardItem.nama_ortu})`;
+                                  quickContext = `Form: ${selectedLeaderboardItem.status_yatim} (${selectedLeaderboardItem.nama_ortu})`;
                                 } else if (item.key === 'agama_islam') {
-                                  quickContext = `Isian Form: ${selectedLeaderboardItem.agama}`;
+                                  quickContext = `Form: ${selectedLeaderboardItem.agama}`;
                                 } else if (item.key === 'jenjang_mahasiswa') {
-                                  quickContext = `Isian Form: ${selectedLeaderboardItem.jenjang} • Semester ${selectedLeaderboardItem.semester}`;
+                                  quickContext = `Form: ${selectedLeaderboardItem.jenjang} • Sem ${selectedLeaderboardItem.semester}`;
                                 } else if (item.key === 'foto_rumah') {
-                                  quickContext = `Rumah: ${selectedLeaderboardItem.status_rumah} • Penghasilan: Rp ${selectedLeaderboardItem.penghasilan_ortu}`;
+                                  quickContext = `${selectedLeaderboardItem.status_rumah} • Ortu: Rp ${selectedLeaderboardItem.penghasilan_ortu}`;
                                 } else if (item.key === 'slip_ukt') {
                                   quickContext = `UKT: Rp ${selectedLeaderboardItem.nominal_ukt} (${selectedLeaderboardItem.status_ukt || '-'})`;
                                 }
@@ -1799,95 +1828,88 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                 return (
                                   <div
                                     key={item.key}
-                                    className={`p-3 rounded-2xl border-2 transition-all space-y-2 ${cardBorder}`}
+                                    className={`p-2.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-1.5 ${cardBorder}`}
                                   >
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="space-y-0.5">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="w-5 h-5 rounded-md bg-[#111827] text-white font-mono-code font-black text-[10px] flex items-center justify-center shrink-0">
+                                    <div>
+                                      <div className="flex items-start justify-between gap-1.5">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <span className="w-4 h-4 rounded bg-[#111827] text-white font-mono-code font-black text-[9px] flex items-center justify-center shrink-0">
                                             {item.no}
                                           </span>
-                                          <h6 className="font-black text-xs text-[#111827]">{item.title}</h6>
+                                          <h6 className="font-black text-[11px] text-[#111827] leading-tight truncate">
+                                            {item.title}
+                                          </h6>
                                         </div>
-                                        <p className="text-[10px] font-semibold text-gray-600 pl-6">
-                                          <span className="font-extrabold text-gray-700">Cara verifikasi:</span>{' '}
-                                          {item.howToVerify}
-                                        </p>
-                                        {quickContext && (
-                                          <div className="pl-6 pt-0.5">
-                                            <span className="inline-block px-2 py-0.5 rounded bg-white border border-gray-300 text-[10px] font-bold text-[#1D4ED8]">
-                                              {quickContext}
-                                            </span>
-                                          </div>
-                                        )}
+
+                                        {/* Pass / Fail Compact Buttons */}
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleSetVerificationItem(item.key, 'pass')}
+                                            className={`px-2 py-1 rounded-lg border font-black text-[9px] flex items-center gap-0.5 cursor-pointer transition-all ${
+                                              currentVal === 'pass'
+                                                ? 'bg-[#15803D] text-white border-[#111827]'
+                                                : 'bg-white text-[#15803D] border-[#15803D]/50 hover:bg-[#DCFCE7]'
+                                            }`}
+                                          >
+                                            <Check className="w-2.5 h-2.5" />
+                                            <span>Sesuai</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleSetVerificationItem(item.key, 'fail')}
+                                            className={`px-2 py-1 rounded-lg border font-black text-[9px] flex items-center gap-0.5 cursor-pointer transition-all ${
+                                              currentVal === 'fail'
+                                                ? 'bg-red-600 text-white border-[#111827]'
+                                                : 'bg-white text-red-600 border-red-400 hover:bg-red-50'
+                                            }`}
+                                          >
+                                            <XCircle className="w-2.5 h-2.5" />
+                                            <span>Gugur</span>
+                                          </button>
+                                        </div>
                                       </div>
 
-                                      {/* Pass / Fail Buttons */}
-                                      <div className="flex items-center gap-1 shrink-0">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleSetVerificationItem(item.key, 'pass')}
-                                          className={`px-2.5 py-1.5 rounded-xl border-2 font-black text-[10px] flex items-center gap-1 cursor-pointer transition-all ${
-                                            currentVal === 'pass'
-                                              ? 'bg-[#15803D] text-white border-[#111827] shadow-[1.5px_1.5px_0px_#111827]'
-                                              : 'bg-white text-[#15803D] border-[#15803D]/50 hover:bg-[#DCFCE7]'
-                                          }`}
-                                        >
-                                          <Check className="w-3 h-3" />
-                                          <span>Sesuai</span>
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleSetVerificationItem(item.key, 'fail')}
-                                          className={`px-2.5 py-1.5 rounded-xl border-2 font-black text-[10px] flex items-center gap-1 cursor-pointer transition-all ${
-                                            currentVal === 'fail'
-                                              ? 'bg-red-600 text-white border-[#111827] shadow-[1.5px_1.5px_0px_#111827]'
-                                              : 'bg-white text-red-600 border-red-400 hover:bg-red-50'
-                                          }`}
-                                        >
-                                          <XCircle className="w-3 h-3" />
-                                          <span>Gugur</span>
-                                        </button>
-                                      </div>
+                                      <p className="text-[9.5px] font-semibold text-gray-600 mt-1 leading-snug">
+                                        {item.howToVerify}
+                                      </p>
                                     </div>
 
-                                    {/* Shortcut to preview related documents in Middle Column + UKT Payment Status toggle for Item 7 */}
-                                    {(item.docKeys.length > 0 || item.hasUktPaymentStatus) && (
-                                      <div className="pl-6 pt-1 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200/70">
-                                        {item.docKeys.length > 0 && (
-                                          <div className="flex flex-wrap items-center gap-1">
-                                            <span className="text-[9px] font-extrabold text-gray-500 mr-0.5">
-                                              Cek Berkas:
-                                            </span>
-                                            {item.docKeys.map((dk) => {
-                                              const hasDoc = Boolean(uploadedFiles[dk]);
-                                              return (
-                                                <button
-                                                  key={dk}
-                                                  type="button"
-                                                  onClick={() => handleOpenDocShortcut(dk)}
-                                                  disabled={!hasDoc}
-                                                  className={`px-2 py-0.5 rounded-md border text-[9px] font-black flex items-center gap-1 cursor-pointer ${
-                                                    hasDoc
-                                                      ? activeDocKey === dk && middlePanelMode === 'docs'
-                                                        ? 'bg-[#1D4ED8] text-white border-[#111827]'
-                                                        : 'bg-white hover:bg-[#FFD60A] text-[#111827] border-[#111827]'
-                                                      : 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
-                                                  }`}
-                                                >
-                                                  <FileText className="w-2.5 h-2.5" />
-                                                  <span>{DOC_LABELS[dk] || dk}</span>
-                                                </button>
-                                              );
-                                            })}
-                                          </div>
-                                        )}
+                                    {/* Bottom row: Form context pill + document preview shortcuts + UKT status */}
+                                    <div className="flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-black/10">
+                                      {quickContext ? (
+                                        <span className="px-1.5 py-0.5 rounded bg-white/90 border border-gray-300 text-[9px] font-bold text-[#1D4ED8] truncate max-w-[180px]" title={quickContext}>
+                                          {quickContext}
+                                        </span>
+                                      ) : (
+                                        <span />
+                                      )}
+
+                                      <div className="flex flex-wrap items-center gap-1">
+                                        {item.docKeys.map((dk) => {
+                                          const hasDoc = Boolean(uploadedFiles[dk]);
+                                          return (
+                                            <button
+                                              key={dk}
+                                              type="button"
+                                              onClick={() => handleOpenDocShortcut(dk)}
+                                              disabled={!hasDoc}
+                                              className={`px-1.5 py-0.5 rounded border text-[8.5px] font-black flex items-center gap-0.5 cursor-pointer ${
+                                                hasDoc
+                                                  ? activeDocKey === dk && middlePanelMode === 'docs'
+                                                    ? 'bg-[#1D4ED8] text-white border-[#111827]'
+                                                    : 'bg-white hover:bg-[#FFD60A] text-[#111827] border-[#111827]'
+                                                  : 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
+                                              }`}
+                                            >
+                                              <FileText className="w-2.5 h-2.5" />
+                                              <span>{DOC_LABELS[dk] || dk}</span>
+                                            </button>
+                                          );
+                                        })}
 
                                         {item.hasUktPaymentStatus && (
-                                          <div className="flex items-center gap-1">
-                                            <span className="text-[9px] font-extrabold text-gray-600">
-                                              Status Bayar UKT:
-                                            </span>
+                                          <div className="flex items-center gap-0.5 ml-1">
                                             {['SUDAH', 'BELUM'].map((stUkt) => (
                                               <button
                                                 key={stUkt}
@@ -1898,41 +1920,51 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                                     uktPaymentStatus: prev.uktPaymentStatus === stUkt ? '' : stUkt,
                                                   }))
                                                 }
-                                                className={`px-2 py-0.5 rounded-md border text-[9px] font-black cursor-pointer ${
+                                                className={`px-1.5 py-0.5 rounded border text-[8.5px] font-black cursor-pointer ${
                                                   interviewForm.uktPaymentStatus === stUkt
                                                     ? 'bg-[#1D4ED8] text-white border-[#111827]'
                                                     : 'bg-white text-gray-700 border-gray-400 hover:bg-[#EFF6FF]'
                                                 }`}
                                               >
-                                                {stUkt} BAYAR
+                                                {stUkt}
                                               </button>
                                             ))}
                                           </div>
                                         )}
                                       </div>
-                                    )}
+                                    </div>
                                   </div>
                                 );
                               })}
                             </div>
+
+                            {interviewSectionTab === 'bagian1' && (
+                              <div className="pt-1 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setInterviewSectionTab('bagian2')}
+                                  className="px-3 py-1.5 bg-[#1D4ED8] text-white border-2 border-[#111827] rounded-xl text-[10px] font-black flex items-center gap-1 shadow-[2px_2px_0px_#111827] cursor-pointer"
+                                >
+                                  <span>Lanjut ke Bagian 2 (Penilaian Skala 1–4)</span>
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
 
                         {/* ============================================================
-                            BAGIAN 2: PENILAIAN TERBOBOT DENGAN SKALA INDIKATOR 1-4
+                            BAGIAN 2: PENILAIAN TERBOBOT SKALA 1-4 (4-COL COMPACT CARDS)
                            ============================================================ */}
-                        {(interviewSectionTab === 'all' || interviewSectionTab === 'bagian2') && (
-                          <div className="space-y-3">
-                            <div className="bg-[#EFF6FF] border-2 border-[#111827] px-3 py-2 rounded-2xl">
-                              <h5 className="font-black text-[11px] text-[#1D4ED8] uppercase">
-                                Bagian 2 — Penilaian Terbobot (Skala Indikator 1–4)
-                              </h5>
-                              <p className="text-[10px] font-semibold text-gray-600">
-                                Pilih skor <strong>1 (Kurang)</strong> s.d. <strong>4 (Sangat Baik)</strong> sesuai rubrik di bawah.
-                              </p>
+                        {(interviewSectionTab === 'bagian2' || interviewSectionTab === 'all') && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2 bg-[#EFF6FF] border border-[#111827] px-2.5 py-1.5 rounded-xl">
+                              <span className="font-black text-[10px] text-[#1D4ED8] uppercase">
+                                Bagian 2 — Penilaian Terbobot Skala 1–4 (≥75 Rekomendasi • 60–74 Cadangan • &lt;60 Gugur)
+                              </span>
                             </div>
 
-                            <div className="space-y-3">
+                            <div className="space-y-2">
                               {INTERVIEW_SCORING_RUBRIC.map((ind) => {
                                 const selectedScore = Number(interviewForm.scores?.[ind.key]) || 0;
                                 const indEval = evalResult.breakdown[ind.key] || {
@@ -1944,70 +1976,53 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                 return (
                                   <div
                                     key={ind.key}
-                                    className="bg-[#FFFDF5] border-2 border-[#111827] rounded-2xl p-3 space-y-2.5 shadow-[2px_2px_0px_#111827]"
+                                    className="bg-[#FFFDF5] border-2 border-[#111827] rounded-2xl p-2.5 space-y-1.5"
                                   >
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div>
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="w-5 h-5 rounded-md bg-[#1D4ED8] text-white font-mono-code font-black text-[10px] flex items-center justify-center shrink-0">
-                                            {ind.no}
-                                          </span>
-                                          <h6 className="font-black text-xs text-[#111827]">{ind.title}</h6>
-                                        </div>
-                                        <span className="inline-block mt-1 px-2 py-0.5 rounded bg-[#FFD60A] border border-[#111827] text-[9px] font-black">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="w-4 h-4 rounded bg-[#1D4ED8] text-white font-mono-code font-black text-[9px] flex items-center justify-center shrink-0">
+                                          {ind.no}
+                                        </span>
+                                        <h6 className="font-black text-[11px] text-[#111827]">{ind.title}</h6>
+                                        <span className="px-1.5 py-0.5 rounded bg-[#FFD60A] border border-[#111827] text-[8.5px] font-black">
                                           {ind.badge}
                                         </span>
                                       </div>
 
-                                      <div className="text-right font-mono-code shrink-0 bg-white px-2.5 py-1 rounded-xl border border-[#111827]">
-                                        <span className="text-[9px] text-gray-500 block font-sans font-bold">
-                                          Nilai Bobot
-                                        </span>
-                                        <span className="font-black text-xs text-[#1D4ED8]">
-                                          {indEval.weighted} / {ind.weight}
+                                      <div className="flex items-center gap-1.5">
+                                        {ind.docKeys &&
+                                          ind.docKeys.map((dk) => {
+                                            const hasDoc = Boolean(uploadedFiles[dk]);
+                                            return (
+                                              <button
+                                                key={dk}
+                                                type="button"
+                                                onClick={() => handleOpenDocShortcut(dk)}
+                                                disabled={!hasDoc}
+                                                className={`px-1.5 py-0.5 rounded border text-[8.5px] font-black cursor-pointer ${
+                                                  hasDoc
+                                                    ? 'bg-white hover:bg-[#FFD60A] text-[#111827] border-[#111827]'
+                                                    : 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
+                                                }`}
+                                              >
+                                                Cek {DOC_LABELS[dk] || dk}
+                                              </button>
+                                            );
+                                          })}
+                                        <span className="font-mono-code font-black text-[10px] text-[#1D4ED8] bg-white px-2 py-0.5 rounded-lg border border-[#111827]">
+                                          {indEval.weighted}/{ind.weight}
                                         </span>
                                       </div>
                                     </div>
 
-                                    {/* Key Questions Box */}
-                                    <div className="bg-[#EFF6FF] border border-[#1D4ED8]/30 rounded-xl p-2.5 space-y-1">
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-[9px] font-black uppercase text-[#1D4ED8] flex items-center gap-1">
-                                          <HelpCircle className="w-3 h-3" />
-                                          <span>Pertanyaan Kunci / Panduan Observasi:</span>
-                                        </span>
-                                        {ind.docKeys && ind.docKeys.length > 0 && (
-                                          <div className="flex items-center gap-1">
-                                            {ind.docKeys.map((dk) => {
-                                              const hasDoc = Boolean(uploadedFiles[dk]);
-                                              return (
-                                                <button
-                                                  key={dk}
-                                                  type="button"
-                                                  onClick={() => handleOpenDocShortcut(dk)}
-                                                  disabled={!hasDoc}
-                                                  className={`px-1.5 py-0.5 rounded border text-[8px] font-black cursor-pointer ${
-                                                    hasDoc
-                                                      ? 'bg-white hover:bg-[#FFD60A] text-[#111827] border-[#111827]'
-                                                      : 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
-                                                  }`}
-                                                >
-                                                  Lihat {DOC_LABELS[dk] || dk}
-                                                </button>
-                                              );
-                                            })}
-                                          </div>
-                                        )}
-                                      </div>
-                                      <ul className="list-disc list-inside text-[10px] font-bold text-[#111827] space-y-0.5">
-                                        {ind.questions.map((q, qIdx) => (
-                                          <li key={qIdx}>{q}</li>
-                                        ))}
-                                      </ul>
+                                    {/* Compact Key Questions Line */}
+                                    <div className="text-[9.5px] font-bold text-[#1E3A8A] bg-[#EFF6FF] px-2 py-1 rounded-lg border border-[#1D4ED8]/20">
+                                      <span className="font-black uppercase mr-1">Tanya:</span>
+                                      {ind.questions.join(' • ')}
                                     </div>
 
-                                    {/* 1 - 4 Score Cards */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                    {/* 4-Column Horizontal Score Cards */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                                       {ind.options.map((opt) => {
                                         const isChosen = selectedScore === opt.score;
                                         let activeStyle =
@@ -2015,16 +2030,16 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                         if (isChosen) {
                                           if (opt.score === 4) {
                                             activeStyle =
-                                              'bg-[#DCFCE7] border-[#15803D] text-[#14532D] shadow-[2px_2px_0px_#15803D]';
+                                              'bg-[#DCFCE7] border-[#15803D] text-[#14532D] shadow-[1.5px_1.5px_0px_#15803D]';
                                           } else if (opt.score === 3) {
                                             activeStyle =
-                                              'bg-[#DBEAFE] border-[#1D4ED8] text-[#1E3A8A] shadow-[2px_2px_0px_#1D4ED8]';
+                                              'bg-[#DBEAFE] border-[#1D4ED8] text-[#1E3A8A] shadow-[1.5px_1.5px_0px_#1D4ED8]';
                                           } else if (opt.score === 2) {
                                             activeStyle =
-                                              'bg-[#FEF9C3] border-amber-600 text-amber-900 shadow-[2px_2px_0px_#D97706]';
+                                              'bg-[#FEF9C3] border-amber-600 text-amber-900 shadow-[1.5px_1.5px_0px_#D97706]';
                                           } else {
                                             activeStyle =
-                                              'bg-red-100 border-red-600 text-red-900 shadow-[2px_2px_0px_#DC2626]';
+                                              'bg-red-100 border-red-600 text-red-900 shadow-[1.5px_1.5px_0px_#DC2626]';
                                           }
                                         }
 
@@ -2033,17 +2048,17 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                             key={opt.score}
                                             type="button"
                                             onClick={() => handleSetIndicatorScore(ind.key, opt.score)}
-                                            className={`p-2 rounded-xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between ${activeStyle}`}
+                                            className={`p-1.5 rounded-xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between ${activeStyle}`}
                                           >
-                                            <div className="flex items-center justify-between w-full mb-1">
-                                              <span className="font-black text-[10px] uppercase">
-                                                Skor {opt.score} ({opt.label})
+                                            <div className="flex items-center justify-between w-full mb-0.5">
+                                              <span className="font-black text-[9.5px] uppercase">
+                                                {opt.score}. {opt.label}
                                               </span>
-                                              <span className="font-mono-code font-black text-[9px] px-1.5 py-0.5 rounded bg-black/10">
-                                                +{((opt.score / 4) * ind.weight).toFixed(0)} poin
+                                              <span className="font-mono-code font-black text-[8.5px] px-1 rounded bg-black/10">
+                                                +{((opt.score / 4) * ind.weight).toFixed(0)}
                                               </span>
                                             </div>
-                                            <p className="text-[10px] font-semibold leading-snug opacity-90">
+                                            <p className="text-[9px] font-semibold leading-tight opacity-90">
                                               {opt.desc}
                                             </p>
                                           </button>
@@ -2054,35 +2069,40 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                 );
                               })}
                             </div>
-
-                            {/* Ambang Rekomendasi Reference Box */}
-                            <div className="bg-[#FFFDF5] border-2 border-dashed border-[#111827]/40 rounded-2xl p-3 text-[10px] space-y-1">
-                              <span className="font-black uppercase text-[#111827] block">
-                                Ambang Rekomendasi Hasil Wawancara:
-                              </span>
-                              <div className="flex items-center justify-between font-bold text-[#15803D]">
-                                <span>• Total Skor Tertimbang ≥ 75 (Lolos Verifikasi)</span>
-                                <span className="font-black">→ DIREKOMENDASIKAN</span>
-                              </div>
-                              <div className="flex items-center justify-between font-bold text-amber-700">
-                                <span>• Total Skor Tertimbang 60 – 74 (Lolos Verifikasi)</span>
-                                <span className="font-black">→ CADANGAN</span>
-                              </div>
-                              <div className="flex items-center justify-between font-bold text-red-700">
-                                <span>• Total Skor Tertimbang &lt; 60, atau GUGUR di Verifikasi Cepat</span>
-                                <span className="font-black">→ TIDAK DIREKOMENDASIKAN</span>
-                              </div>
-                            </div>
                           </div>
                         )}
                       </div>
 
-                      {/* Sticky Decision & Save Footer */}
-                      <div className="bg-[#EFF6FF] border-t-2 border-[#111827] p-3.5 space-y-2.5 shrink-0">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black uppercase text-[#111827]">
-                            Keputusan Status Seleksi & Catatan Pewawancara:
-                          </span>
+                      {/* Ultra-Compact Sticky Decision & Save Footer */}
+                      <div className="bg-[#EFF6FF] border-t-2 border-[#111827] px-3 py-2 space-y-1.5 shrink-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="grid grid-cols-4 gap-1 flex-1">
+                            {[
+                              { val: 'Pending', label: 'Pending' },
+                              { val: 'Lolos Administrasi', label: 'Lolos / Cadangan' },
+                              { val: 'Diterima', label: 'Diterima' },
+                              { val: 'Tidak Lolos', label: 'Gugur' },
+                            ].map((st) => {
+                              let cls = 'bg-white text-gray-700 border-[#111827]/40 hover:bg-gray-50';
+                              if (leaderboardStatus === st.val) {
+                                if (st.val === 'Lolos Administrasi') cls = 'bg-[#15803D] text-white border-[#111827]';
+                                else if (st.val === 'Diterima') cls = 'bg-[#1D4ED8] text-white border-[#111827]';
+                                else if (st.val === 'Tidak Lolos') cls = 'bg-red-600 text-white border-[#111827]';
+                                else cls = 'bg-[#FFD60A] text-[#111827] border-[#111827]';
+                              }
+                              return (
+                                <button
+                                  key={st.val}
+                                  type="button"
+                                  onClick={() => setLeaderboardStatus(st.val)}
+                                  className={`py-1.5 px-1 border-2 rounded-lg font-black text-[9px] uppercase cursor-pointer truncate ${cls}`}
+                                >
+                                  {st.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+
                           {evalResult.isAssessed && (
                             <button
                               type="button"
@@ -2095,70 +2115,38 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                   setLeaderboardStatus('Tidak Lolos');
                                 }
                               }}
-                              className="text-[9px] font-black text-[#1D4ED8] underline cursor-pointer"
+                              className="px-2 py-1.5 bg-white border border-[#1D4ED8] rounded-lg text-[9px] font-black text-[#1D4ED8] hover:bg-[#DBEAFE] shrink-0 cursor-pointer"
+                              title="Ikuti rekomendasi wawancara secara otomatis"
                             >
-                              Sesuaikan Status dgn Rekomendasi
+                              Auto-Status
                             </button>
                           )}
                         </div>
 
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {[
-                            { val: 'Pending', label: 'Pending' },
-                            { val: 'Lolos Administrasi', label: 'Lolos / Cadangan' },
-                            { val: 'Diterima', label: 'Diterima' },
-                            { val: 'Tidak Lolos', label: 'Gugur' },
-                          ].map((st) => {
-                            let cls = 'bg-white text-gray-700 border-[#111827]/40 hover:bg-gray-50';
-                            if (leaderboardStatus === st.val) {
-                              if (st.val === 'Lolos Administrasi') cls = 'bg-[#15803D] text-white border-[#111827]';
-                              else if (st.val === 'Diterima') cls = 'bg-[#1D4ED8] text-white border-[#111827]';
-                              else if (st.val === 'Tidak Lolos') cls = 'bg-red-600 text-white border-[#111827]';
-                              else cls = 'bg-[#FFD60A] text-[#111827] border-[#111827]';
-                            }
-                            return (
-                              <button
-                                key={st.val}
-                                type="button"
-                                onClick={() => setLeaderboardStatus(st.val)}
-                                className={`py-2 px-1 border-2 rounded-xl font-black text-[9px] uppercase cursor-pointer ${cls}`}
-                              >
-                                {st.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        <textarea
-                          value={leaderboardComment}
-                          onChange={(e) => setLeaderboardComment(e.target.value)}
-                          placeholder="Catatan hasil wawancara (temuan verifikasi berkas, kondisi rumah, komitmen kandidat)..."
-                          className="w-full text-xs font-semibold p-2.5 bg-white border-2 border-[#111827] rounded-xl h-14 resize-none"
-                        />
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={leaderboardComment}
+                            onChange={(e) => setLeaderboardComment(e.target.value)}
+                            placeholder="Catatan wawancara (temuan berkas, rumah, komitmen)..."
+                            className="flex-1 text-xs font-semibold px-2.5 py-1.5 bg-white border-2 border-[#111827] rounded-xl"
+                          />
                           <button
                             type="button"
                             onClick={handleSaveCurrentInterview}
                             disabled={savingStatus}
-                            className="btn-secondary py-2.5 text-xs disabled:opacity-75"
+                            className="btn-secondary py-1.5 px-2.5 text-[11px] shrink-0 disabled:opacity-75"
                           >
-                            <span>{savingStatus ? 'Menyimpan...' : 'Simpan Saja'}</span>
+                            <span>{savingStatus ? '...' : 'Simpan'}</span>
                           </button>
                           <button
                             type="button"
                             onClick={handleSaveAndNext}
                             disabled={savingStatus}
-                            className="btn-yellow sm:col-span-2 py-2.5 text-xs disabled:opacity-75"
+                            className="btn-yellow py-1.5 px-3 text-[11px] shrink-0 disabled:opacity-75"
                           >
-                            {savingStatus ? (
-                              <span>Menyimpan...</span>
-                            ) : (
-                              <>
-                                <span>Simpan & Lanjut Kandidat Berikutnya</span>
-                                <ChevronRight className="w-4 h-4" />
-                              </>
-                            )}
+                            <span>{savingStatus ? 'Menyimpan...' : 'Simpan & Lanjut'}</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>

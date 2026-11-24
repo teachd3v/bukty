@@ -92,7 +92,7 @@ export default function App() {
         setIsAdminRoute(false);
         setIsPengumumanRoute(false);
         setIsPantukhirRoute(true);
-      } else if (hash === '#admin' || pathname.includes('/admin')) {
+      } else if (hash.startsWith('#admin') || pathname.includes('/admin')) {
         setIsAdminRoute(true);
         setIsPengumumanRoute(false);
         setIsPantukhirRoute(false);
