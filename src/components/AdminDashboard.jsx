@@ -859,7 +859,11 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     <div className="min-h-screen bg-[#FFFDF5] text-[#111827] flex flex-col selection:bg-[#FFD60A] selection:text-[#111827]">
       {/* Sticky Admin Header */}
       <header className="bg-white border-b-[3px] border-[#111827] sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div
+          className={`${
+            activeTab === 'leaderboard' ? 'max-w-[1920px]' : 'max-w-7xl'
+          } mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 transition-all`}
+        >
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <img src="/logo-ge.png" alt="GREAT Edunesia" className="h-6 object-contain" />
@@ -905,7 +909,11 @@ export default function AdminDashboard({ onLeaveAdmin }) {
         </div>
       </header>
 
-      <main className="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
+      <main
+        className={`flex-grow ${
+          activeTab === 'leaderboard' ? 'max-w-[1920px]' : 'max-w-7xl'
+        } mx-auto w-full px-4 sm:px-6 py-5 space-y-6 transition-all`}
+      >
         {/* TAB 1: PENDAFTAR */}
         {activeTab === 'list' && (
           <>
@@ -1180,9 +1188,9 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
         {/* TAB 2: LEADERBOARD SPLIT-SCREEN FAST VERIFIER & INTERVIEW RUBRIC */}
         {activeTab === 'leaderboard' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-            {/* COLUMN 1 (LEFT - lg:col-span-3): Ranking List */}
-            <div className="lg:col-span-3 space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[290px_minmax(0,1fr)_minmax(0,1.25fr)] xl:grid-cols-[320px_minmax(0,1fr)_minmax(0,1.3fr)] gap-5 items-start">
+            {/* COLUMN 1 (LEFT): Ranking List */}
+            <div className="min-w-0 space-y-4">
               <div className="bg-white border-[3px] border-[#111827] p-3.5 rounded-3xl shadow-[4px_4px_0px_#111827]">
                 <div className="flex items-center justify-between mb-2.5 gap-2 flex-wrap">
                   <h4 className="font-black text-xs sm:text-sm flex items-center gap-1.5">
@@ -1315,8 +1323,8 @@ export default function AdminDashboard({ onLeaveAdmin }) {
               </div>
             </div>
 
-            {/* COLUMN 2 (MIDDLE - lg:col-span-4): Candidate Detail & Inline Document Viewer Combined */}
-            <div className="lg:col-span-4 space-y-4">
+            {/* COLUMN 2 (MIDDLE): Candidate Detail & Inline Document Viewer Combined */}
+            <div className="min-w-0 space-y-4">
               {selectedLeaderboardItem ? (
                 (() => {
                   let uploadedFiles = {};
@@ -1623,8 +1631,8 @@ export default function AdminDashboard({ onLeaveAdmin }) {
               )}
             </div>
 
-            {/* COLUMN 3 (RIGHT - lg:col-span-5): FORM RUBRIK WAWANCARA & PENILAIAN */}
-            <div className="lg:col-span-5 space-y-4">
+            {/* COLUMN 3 (RIGHT): FORM RUBRIK WAWANCARA & PENILAIAN */}
+            <div className="min-w-0 space-y-4">
               {selectedLeaderboardItem ? (
                 (() => {
                   const evalResult = calculateInterviewEvaluation(interviewForm);
