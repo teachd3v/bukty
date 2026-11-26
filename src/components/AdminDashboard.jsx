@@ -29,6 +29,7 @@ import {
   HelpCircle,
   Zap,
   FileSpreadsheet,
+  Building2,
 } from 'lucide-react';
 import {
   calculateBuktyScores,
@@ -521,17 +522,23 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     URL.revokeObjectURL(url);
   };
 
-  const exportRowsToCSV = (dataset, filenamePrefix) => {
-    if (dataset.length === 0) {
+  const exportRowsToCSV = (dataset, filenamePrefix, sourceListOverride = null) => {
+    if (!Array.isArray(dataset) || dataset.length === 0) {
       alert('Tidak ada data untuk diekspor.');
       return;
     }
 
+    const baseRegistrations =
+      Array.isArray(sourceListOverride) && sourceListOverride.length > 0
+        ? sourceListOverride
+        : registrations;
+
     const rankedMap = new Map(
-      rankInterviewCandidates(registrations, recipientQuotaLimit).map((item) => [item.id, item])
+      rankInterviewCandidates(baseRegistrations, recipientQuotaLimit).map((item) => [item.id, item])
     );
 
     const headers = [
+      'No',
       'Ranking Wawancara', 'Status Kuota Top ' + recipientQuotaLimit,
       'No Registrasi', 'Waktu Submit', 'Nama Lengkap', 'NIK', 'TTL', 'Jenis Kelamin', 'Agama',
       'Provinsi', 'Alamat Domisili', 'Alamat KTP', 'No HP', 'Email', 'Instagram', 'Follow Sosmed',
@@ -548,9 +555,16 @@ export default function AdminDashboard({ onLeaveAdmin }) {
       'Total Skor Tertimbang Wawancara', 'Rekomendasi Hasil Wawancara',
     ];
 
-    const escapeCsv = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const escapeCsv = (val) => {
+      const cleaned = String(val ?? '')
+        .replace(/\r\n|\r|\n/g, ' ')
+        .replace(/\t+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return `"${cleaned.replace(/"/g, '""')}"`;
+    };
 
-    const rows = dataset.map((r) => {
+    const rows = dataset.map((r, idx) => {
       const scores = calculateBuktyScores(r);
       const rankInfo = rankedMap.get(r.id);
       const parsedInterview = parseInterviewJson(r.interview_json);
@@ -562,6 +576,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
         : 'Belum Diverifikasi';
 
       return [
+        escapeCsv(idx + 1),
         escapeCsv(rankInfo?.eligibleRank || rankInfo?.interviewRank || '-'),
         escapeCsv(rankInfo?.quotaLabel || 'Belum Diwawancara'),
         escapeCsv(r.reg_id),
@@ -624,7 +639,8 @@ export default function AdminDashboard({ onLeaveAdmin }) {
       ];
     });
 
-    const csvContent = '\uFEFF' + 'sep=;\n' + [headers.join(';'), ...rows.map((e) => e.join(';'))].join('\n');
+    const headerRow = headers.map((h) => escapeCsv(h)).join(',');
+    const csvContent = '\uFEFF' + [headerRow, ...rows.map((e) => e.join(','))].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -634,6 +650,30 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportPendaftarCSV = async (onlyFiltered = false) => {
+    if (onlyFiltered) {
+      exportRowsToCSV(filteredData, 'Pendaftar_BUKTY_Filter');
+      return;
+    }
+
+    let latestList = registrations;
+    try {
+      const res = await fetch('/api/admin/registrations', { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.data) && json.data.length > 0) {
+          latestList = json.data;
+          setRegistrations(json.data);
+          try {
+            localStorage.setItem(LOCAL_SUBMISSIONS_KEY, JSON.stringify(json.data));
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+
+    exportRowsToCSV(latestList, 'Pendaftar_BUKTY', latestList);
   };
 
   const handleSyncGoogleSheets = async () => {
@@ -836,11 +876,14 @@ export default function AdminDashboard({ onLeaveAdmin }) {
   const fetchRegistrations = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/admin/registrations');
+      const res = await fetch('/api/admin/registrations', { cache: 'no-store' });
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json.data)) {
           setRegistrations(json.data);
+          try {
+            localStorage.setItem(LOCAL_SUBMISSIONS_KEY, JSON.stringify(json.data));
+          } catch (e) {}
           setIsLoading(false);
           return;
         }
@@ -1140,6 +1183,11 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
   // Metrics
   const totalPendaftar = registrations.length;
+  const uniqueKampusCount = new Set(
+    registrations
+      .map((r) => (r.perguruan_tinggi || '').trim().replace(/\s+/g, ' ').toLowerCase())
+      .filter(Boolean)
+  ).size;
   const yatimCount = registrations.filter((r) =>
     ['yatim', 'yatim piatu'].includes((r.status_yatim || '').toLowerCase())
   ).length;
@@ -1151,6 +1199,11 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     const val = parseInt((curr.nominal_ukt || '0').replace(/\D/g, ''), 10) || 0;
     return acc + val;
   }, 0);
+  const isFilterActive =
+    statusFilter !== 'Semua' ||
+    yatimFilter !== 'Semua' ||
+    provinsiFilter !== 'Semua' ||
+    searchQuery.trim() !== '';
 
   // LOGIN PAGE
   if (!isAuthenticated) {
@@ -1256,15 +1309,27 @@ export default function AdminDashboard({ onLeaveAdmin }) {
         {/* TAB 1: PENDAFTAR */}
         {activeTab === 'list' && (
           <>
-            {/* 5 KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* 6 KPI Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-extrabold text-gray-500 uppercase">Total Pendaftar</p>
                   <h3 className="text-2xl font-black text-[#111827] font-heading mt-0.5">{totalPendaftar}</h3>
+                  <p className="text-[10px] font-bold text-[#1D4ED8] mt-0.5">{uniqueKampusCount} Kampus Unik</p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-[#DBEAFE] text-[#1D4ED8] border-2 border-[#111827] flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-[#DBEAFE] text-[#1D4ED8] border-2 border-[#111827] flex items-center justify-center shrink-0">
                   <Users className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-extrabold text-gray-500 uppercase">Kampus Unik (PTN)</p>
+                  <h3 className="text-2xl font-black text-[#1D4ED8] font-heading mt-0.5">{uniqueKampusCount}</h3>
+                  <p className="text-[10px] font-bold text-gray-500 mt-0.5">Perguruan Tinggi</p>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#1D4ED8] border-2 border-[#111827] flex items-center justify-center shrink-0">
+                  <Building2 className="w-5 h-5" />
                 </div>
               </div>
 
@@ -1273,7 +1338,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   <p className="text-[10px] font-extrabold text-gray-500 uppercase">Yatim / Yatim Piatu</p>
                   <h3 className="text-2xl font-black text-[#1D4ED8] font-heading mt-0.5">{yatimCount}</h3>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-[#FFD60A] text-[#111827] border-2 border-[#111827] flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-[#FFD60A] text-[#111827] border-2 border-[#111827] flex items-center justify-center shrink-0">
                   <HeartHandshake className="w-5 h-5" />
                 </div>
               </div>
@@ -1285,7 +1350,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                     Rp {(totalNominal / 1000000).toFixed(1)} Jt
                   </h3>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-[#DCFCE7] text-[#15803D] border-2 border-[#111827] flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-[#DCFCE7] text-[#15803D] border-2 border-[#111827] flex items-center justify-center shrink-0">
                   <DollarSign className="w-5 h-5" />
                 </div>
               </div>
@@ -1295,7 +1360,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   <p className="text-[10px] font-extrabold text-gray-500 uppercase">Lolos / Diterima</p>
                   <h3 className="text-2xl font-black text-[#15803D] font-heading mt-0.5">{lolosCount}</h3>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-[#DCFCE7] text-[#15803D] border-2 border-[#111827] flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-[#DCFCE7] text-[#15803D] border-2 border-[#111827] flex items-center justify-center shrink-0">
                   <CheckCircle className="w-5 h-5" />
                 </div>
               </div>
@@ -1305,7 +1370,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   <p className="text-[10px] font-extrabold text-gray-500 uppercase">Pending Review</p>
                   <h3 className="text-2xl font-black text-amber-600 font-heading mt-0.5">{pendingCount}</h3>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-[#FEF9C3] text-amber-700 border-2 border-[#111827] flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-[#FEF9C3] text-amber-700 border-2 border-[#111827] flex items-center justify-center shrink-0">
                   <Clock className="w-5 h-5" />
                 </div>
               </div>
@@ -1380,12 +1445,24 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   </button>
                 )}
 
+                {isFilterActive && filteredData.length < registrations.length && (
+                  <button
+                    onClick={() => handleExportPendaftarCSV(true)}
+                    className="btn-secondary py-2 px-3.5 text-xs"
+                    title="Ekspor hanya data yang sesuai filter saat ini"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Ekspor Filter ({filteredData.length})</span>
+                  </button>
+                )}
+
                 <button
-                  onClick={() => exportRowsToCSV(filteredData, 'Pendaftar_BUKTY')}
+                  onClick={() => handleExportPendaftarCSV(false)}
                   className="btn-yellow py-2 px-4 text-xs"
+                  title="Ekspor seluruh data pendaftar ke CSV"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Ekspor CSV</span>
+                  <span>Ekspor CSV ({totalPendaftar})</span>
                 </button>
               </div>
             </div>
