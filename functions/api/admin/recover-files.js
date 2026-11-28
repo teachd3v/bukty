@@ -182,10 +182,10 @@ async function runRecovery(env, applyChanges = false) {
           }
         }
         if (obj.ts && maxRefTs) {
-          // Allow up to 48 hours before minRefTs and at most 15 minutes after maxRefTs
+          // Allow up to 48 hours before minRefTs and up to 6 hours after maxRefTs (accounts for WITA/WIT/device clock skew)
           const fortyEightHours = 48 * 60 * 60 * 1000;
-          const fifteenMinutes = 15 * 60 * 1000;
-          if (obj.ts < minRefTs - fortyEightHours || obj.ts > maxRefTs + fifteenMinutes) {
+          const sixHours = 6 * 60 * 60 * 1000;
+          if (obj.ts < minRefTs - fortyEightHours || obj.ts > maxRefTs + sixHours) {
             return false;
           }
         }
