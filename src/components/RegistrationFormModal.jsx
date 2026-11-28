@@ -109,7 +109,16 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
     const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
     if (savedDraft) {
       try {
-        setFormData((prev) => ({ ...prev, ...JSON.parse(savedDraft), jenisPt: 'PTN' }));
+        const parsed = JSON.parse(savedDraft);
+        const rawFiles = parsed.uploadedFiles || {};
+        const validFiles = {};
+        Object.keys(rawFiles).forEach((k) => {
+          const f = rawFiles[k];
+          if (f && f.fileUrl && f.fileUrl !== '#') {
+            validFiles[k] = { ...f, isUploading: false, uploadError: null };
+          }
+        });
+        setFormData((prev) => ({ ...prev, ...parsed, uploadedFiles: validFiles, jenisPt: 'PTN' }));
       } catch (err) {}
     }
   }, []);
@@ -156,8 +165,8 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
       const cleanUploadedFiles = {};
       Object.keys(data.uploadedFiles || {}).forEach((k) => {
         const fileObj = data.uploadedFiles[k];
-        if (fileObj) {
-          const { previewUrl, ...rest } = fileObj;
+        if (fileObj && fileObj.fileUrl && fileObj.fileUrl !== '#' && !fileObj.isUploading && !fileObj.uploadError) {
+          const { previewUrl, isUploading, uploadError, ...rest } = fileObj;
           cleanUploadedFiles[k] = rest;
         }
       });
@@ -166,16 +175,18 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
   };
 
   const handleChange = (field, value) => {
-    const updated = { ...formData, [field]: value };
-    setFormData(updated);
-    saveDraftToLocalStorage(updated);
+    setFormData((prev) => {
+      const updated = { ...prev, [field]: value };
+      saveDraftToLocalStorage(updated);
+      return updated;
+    });
   };
 
   const handleCurrencyChange = (field, rawValue) => {
     handleChange(field, formatRupiah(rawValue));
   };
 
-  const handleFileUpload = (docKey, e) => {
+  const handleFileUpload = async (docKey, e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -186,68 +197,86 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
     }
 
     const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|heic)$/i.test(file.name);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64Data = reader.result;
-      const tempInfo = {
+    const localPreviewUrl = isImage ? URL.createObjectURL(file) : null;
+    const sizeText = (file.size / 1024 / 1024).toFixed(2) + ' MB';
+
+    const tempInfo = {
+      name: file.name,
+      size: sizeText,
+      previewUrl: localPreviewUrl,
+      isUploading: true,
+      uploadError: null,
+    };
+
+    setFormData((prev) => ({
+      ...prev,
+      uploadedFiles: { ...prev.uploadedFiles, [docKey]: tempInfo },
+    }));
+
+    const attemptUpload = async () => {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success || !json.fileUrl || json.fileUrl === '#') {
+        throw new Error(json.message || 'Gagal mengunggah berkas ke penyimpanan server');
+      }
+      return json;
+    };
+
+    let jsonResult = null;
+    let lastError = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        jsonResult = await attemptUpload();
+        break;
+      } catch (err) {
+        lastError = err;
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 800));
+        }
+      }
+    }
+
+    if (jsonResult) {
+      const finalInfo = {
         name: file.name,
-        size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-        previewUrl: isImage ? base64Data : null,
-        isUploading: true,
+        size: sizeText,
+        fileName: jsonResult.fileName || file.name,
+        fileUrl: jsonResult.fileUrl || `/api/files/${jsonResult.fileName}`,
+        previewUrl: localPreviewUrl,
+        isUploading: false,
+        uploadError: null,
       };
 
-      setFormData((prev) => ({
-        ...prev,
-        uploadedFiles: { ...prev.uploadedFiles, [docKey]: tempInfo },
-      }));
-
-      try {
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: file.name,
-            type: file.type,
-            base64: base64Data,
-          }),
-        });
-
-        const json = await res.json();
-        const finalInfo = {
-          name: file.name,
-          size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-          fileName: json.fileName || file.name,
-          fileUrl: json.fileUrl || `/api/files/${json.fileName}`,
-          previewUrl: isImage ? base64Data : null,
-          isUploading: false,
+      setFormData((prev) => {
+        const updated = {
+          ...prev,
+          uploadedFiles: { ...prev.uploadedFiles, [docKey]: finalInfo },
         };
-
-        setFormData((prev) => {
-          const updated = {
-            ...prev,
-            uploadedFiles: { ...prev.uploadedFiles, [docKey]: finalInfo },
-          };
-          saveDraftToLocalStorage(updated);
-          return updated;
-        });
-      } catch (err) {
-        const fallbackInfo = {
-          name: file.name,
-          size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-          previewUrl: isImage ? base64Data : null,
-          isUploading: false,
+        saveDraftToLocalStorage(updated);
+        return updated;
+      });
+    } else {
+      const failedInfo = {
+        name: file.name,
+        size: sizeText,
+        previewUrl: localPreviewUrl,
+        isUploading: false,
+        uploadError: lastError?.message || 'Gagal mengunggah ke server. Silakan pilih ulang berkas ini.',
+      };
+      setFormData((prev) => {
+        const updated = {
+          ...prev,
+          uploadedFiles: { ...prev.uploadedFiles, [docKey]: failedInfo },
         };
-        setFormData((prev) => {
-          const updated = {
-            ...prev,
-            uploadedFiles: { ...prev.uploadedFiles, [docKey]: fallbackInfo },
-          };
-          saveDraftToLocalStorage(updated);
-          return updated;
-        });
-      }
-    };
-    reader.readAsDataURL(file);
+        saveDraftToLocalStorage(updated);
+        return updated;
+      });
+    }
   };
 
   const totalSteps = 5;
@@ -327,9 +356,31 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
         { key: 'esai', name: 'Esai (1.000–1.500 Kata, TNR 12, Spasi 1,5)' },
         { key: 'slipUkt', name: 'Bukti Tagihan / Slip UKT dari Kampus' },
       ];
+
+      const anyUploading = Object.values(formData.uploadedFiles || {}).some((f) => f && f.isUploading);
+      if (anyUploading) {
+        errors.push('Mohon tunggu hingga seluruh berkas selesai diunggah ke server sebelum melanjutkan.');
+      }
+
       requiredDocs.forEach((d) => {
-        if (!formData.uploadedFiles[d.key]) {
+        const f = formData.uploadedFiles[d.key];
+        if (!f) {
           errors.push(`Berkas Wajib Belum Diunggah: ${d.name}`);
+        } else if (!f.isUploading && (f.uploadError || !f.fileUrl || f.fileUrl === '#')) {
+          errors.push(`Berkas gagal terunggah ke server (silakan pilih ulang file): ${d.name}`);
+        }
+      });
+
+      const optionalDocs = [
+        { key: 'prestasi1', name: 'Dokumen Prestasi 1' },
+        { key: 'prestasi2', name: 'Dokumen Prestasi 2' },
+        { key: 'prestasi3', name: 'Dokumen Prestasi 3' },
+        { key: 'suratYatim', name: 'Surat Kematian Orang Tua / Keterangan Yatim' },
+      ];
+      optionalDocs.forEach((d) => {
+        const f = formData.uploadedFiles[d.key];
+        if (f && !f.isUploading && (f.uploadError || !f.fileUrl || f.fileUrl === '#')) {
+          errors.push(`Berkas opsional gagal terunggah ke server (silakan pilih ulang file): ${d.name}`);
         }
       });
     }
@@ -393,8 +444,8 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
     const cleanUploadedFiles = {};
     Object.keys(formData.uploadedFiles || {}).forEach((k) => {
       const f = formData.uploadedFiles[k];
-      if (f) {
-        const { previewUrl, isUploading, ...metadata } = f;
+      if (f && f.fileUrl && f.fileUrl !== '#') {
+        const { previewUrl, isUploading, uploadError, ...metadata } = f;
         cleanUploadedFiles[k] = metadata;
       }
     });
@@ -1696,11 +1747,19 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
                 <div className="space-y-3">
                   {docSlots.map((doc) => {
                     const uploaded = formData.uploadedFiles[doc.key];
+                    const hasError = uploaded && !uploaded.isUploading && (uploaded.uploadError || !uploaded.fileUrl || uploaded.fileUrl === '#');
+                    const isReady = uploaded && !uploaded.isUploading && !hasError;
                     return (
                       <div
                         key={doc.key}
                         className={`border-2 border-[#111827] p-3 rounded-2xl flex items-center justify-between gap-3 ${
-                          uploaded ? 'bg-[#DCFCE7] border-[#15803D]' : 'bg-white'
+                          hasError
+                            ? 'bg-red-50 border-red-600'
+                            : isReady
+                            ? 'bg-[#DCFCE7] border-[#15803D]'
+                            : uploaded?.isUploading
+                            ? 'bg-[#FEF9C3] border-amber-500'
+                            : 'bg-white'
                         }`}
                       >
                         <div className="min-w-0 flex-1 flex items-center gap-3">
@@ -1723,11 +1782,20 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
                           <div className="min-w-0">
                             <p className="text-xs font-extrabold text-[#111827] leading-snug">{doc.name}</p>
                             {uploaded ? (
-                              <p className="text-[10px] font-bold text-[#15803D] truncate">
-                                {uploaded.isUploading
-                                  ? 'Mengunggah ke server...'
-                                  : `Terlampir — ${uploaded.name} (${uploaded.size})`}
-                              </p>
+                              uploaded.isUploading ? (
+                                <p className="text-[10px] font-bold text-amber-800 truncate flex items-center gap-1">
+                                  <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                                  <span>Mengunggah ke server... ({uploaded.name})</span>
+                                </p>
+                              ) : hasError ? (
+                                <p className="text-[10px] font-bold text-red-700 truncate">
+                                  Gagal terunggah ({uploaded.name}) — Silakan pilih ulang file!
+                                </p>
+                              ) : (
+                                <p className="text-[10px] font-bold text-[#15803D] truncate">
+                                  Terlampir — {uploaded.name} ({uploaded.size})
+                                </p>
+                              )
                             ) : (
                               <p className="text-[10px] text-gray-500 font-semibold">
                                 {doc.isRequired ? 'Wajib diunggah' : 'Opsional'}
@@ -1738,13 +1806,15 @@ export default function RegistrationFormModal({ isOpen, onClose }) {
 
                         <label
                           className={`py-1.5 px-3.5 rounded-xl text-xs font-black shrink-0 cursor-pointer border-2 border-[#111827] flex items-center gap-1.5 transition-colors ${
-                            uploaded
+                            hasError
+                              ? 'bg-red-600 text-white hover:bg-red-700'
+                              : uploaded
                               ? 'bg-[#FFD60A] text-[#111827] shadow-[2px_2px_0px_#111827] hover:bg-[#1D4ED8] hover:text-white'
                               : 'bg-white text-[#111827] hover:bg-[#EFF6FF]'
                           }`}
                         >
                           <Upload className="w-3.5 h-3.5" />
-                          <span>{uploaded ? 'Ganti' : 'Pilih File'}</span>
+                          <span>{hasError ? 'Unggah Ulang' : uploaded ? 'Ganti' : 'Pilih File'}</span>
                           <input
                             type="file"
                             className="hidden"

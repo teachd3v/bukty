@@ -1,4 +1,18 @@
 // Cloudflare Pages Function: POST /api/upload (Upload files to R2 Bucket)
+function inferMimeType(fileName, providedType) {
+  if (providedType && providedType !== 'application/octet-stream') return providedType;
+  const lower = (fileName || '').toLowerCase();
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.heic')) return 'image/heic';
+  if (lower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (lower.endsWith('.doc')) return 'application/msword';
+  return 'application/octet-stream';
+}
+
 export async function onRequestPost({ request, env }) {
   try {
     const contentType = request.headers.get('content-type') || '';
@@ -18,11 +32,12 @@ export async function onRequestPost({ request, env }) {
       }
       fileName = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       fileData = await file.arrayBuffer();
-      fileType = file.type || 'application/octet-stream';
+      fileType = inferMimeType(file.name, file.type);
     } else {
       const json = await request.json();
-      fileName = Date.now() + '_' + (json.name || 'document.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
-      fileType = json.type || 'application/pdf';
+      const origName = json.name || 'document.pdf';
+      fileName = Date.now() + '_' + origName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      fileType = inferMimeType(origName, json.type);
       if (json.base64) {
         const base64Data = json.base64.replace(/^data:.+;base64,/, '');
         const binaryString = atob(base64Data);

@@ -30,6 +30,7 @@ import {
   Zap,
   FileSpreadsheet,
   Building2,
+  Upload,
 } from 'lucide-react';
 import {
   calculateBuktyScores,
@@ -189,6 +190,8 @@ export default function AdminDashboard({ onLeaveAdmin }) {
   const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false);
   const [isUploadingFile, setIsUploadingFile] = useState({ file1: false, file2: false, file3: false });
   const [isUploadingPantukhirFile, setIsUploadingPantukhirFile] = useState(false);
+  const [isRecoveringFiles, setIsRecoveringFiles] = useState(false);
+  const [uploadingAdminDocKey, setUploadingAdminDocKey] = useState(null);
 
   const toggleApprovedNameSort = () => {
     if (approvedNameSort === 'default') setApprovedNameSort('asc');
@@ -754,6 +757,96 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     }
   };
 
+  const handleRecoverMissingFiles = async () => {
+    setIsRecoveringFiles(true);
+    try {
+      const res = await fetch('/api/admin/recover-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await fetchRegistrations();
+        alert(
+          `Pemindaian R2 Selesai!\n` +
+            `• Total Objek di R2: ${data.totalR2Objects}\n` +
+            `• Berkas Berhasil Dipulihkan: ${data.recoveredFilesCount} berkas (pada ${data.recoveredRegistrationsCount} pendaftar)\n` +
+            `• Berkas Tidak Masuk ke R2 (Gagal dari HP Pendaftar): ${data.stillMissingFilesCount} berkas`
+        );
+      } else {
+        alert(`Gagal memindai R2: ${data.message || 'Terjadi kesalahan'}`);
+      }
+    } catch (e) {
+      alert(`Gagal menghubungi server: ${e.message}`);
+    } finally {
+      setIsRecoveringFiles(false);
+    }
+  };
+
+  const handleAdminUploadCandidateDoc = async (candidate, docKey, file) => {
+    if (!candidate || !docKey || !file) return;
+    setUploadingAdminDocKey(`${candidate.id}_${docKey}`);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const upRes = await fetch('/api/upload', { method: 'POST', body: fd });
+      const upJson = await upRes.json();
+      if (!upRes.ok || !upJson.success || !upJson.fileUrl || upJson.fileUrl === '#') {
+        alert(`Gagal mengunggah berkas: ${upJson.message || 'Error R2'}`);
+        return;
+      }
+
+      let currentFiles = {};
+      try {
+        if (candidate.uploaded_files_json) {
+          currentFiles = JSON.parse(candidate.uploaded_files_json);
+        }
+      } catch (e) {}
+
+      const updatedFiles = {
+        ...currentFiles,
+        [docKey]: {
+          name: file.name,
+          size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+          fileName: upJson.fileName,
+          fileUrl: upJson.fileUrl,
+        },
+      };
+      const updatedJsonStr = JSON.stringify(updatedFiles);
+
+      const patchRes = await fetch('/api/admin/registrations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: candidate.id,
+          uploaded_files_json: updatedJsonStr,
+        }),
+      });
+      const patchJson = await patchRes.json();
+      if (!patchRes.ok || !patchJson.success) {
+        alert(`Gagal menyimpan ke database: ${patchJson.message || 'Error D1'}`);
+        return;
+      }
+
+      const updatedList = registrations.map((r) =>
+        r.id === candidate.id ? { ...r, uploaded_files_json: updatedJsonStr } : r
+      );
+      setRegistrations(updatedList);
+      localStorage.setItem(LOCAL_SUBMISSIONS_KEY, JSON.stringify(updatedList));
+
+      if (selectedItem && selectedItem.id === candidate.id) {
+        setSelectedItem((prev) => (prev ? { ...prev, uploaded_files_json: updatedJsonStr } : prev));
+      }
+      if (selectedLeaderboardItem && selectedLeaderboardItem.id === candidate.id) {
+        setSelectedLeaderboardItem((prev) => (prev ? { ...prev, uploaded_files_json: updatedJsonStr } : prev));
+      }
+    } catch (err) {
+      alert(`Error unggah susulan: ${err.message}`);
+    } finally {
+      setUploadingAdminDocKey(null);
+    }
+  };
+
   const handleSelectRankItem = (item) => {
     setSelectedLeaderboardItem(item);
     setLeaderboardStatus(item.status_seleksi || 'Pending');
@@ -766,9 +859,21 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     try {
       if (item.uploaded_files_json) {
         const parsed = JSON.parse(item.uploaded_files_json);
-        const keys = Object.keys(parsed);
+        const keys = Object.keys(parsed).sort((a, b) => {
+          const idxA = DOC_ORDER.indexOf(a);
+          const idxB = DOC_ORDER.indexOf(b);
+          if (idxA === -1 && idxB === -1) return a.localeCompare(b);
+          if (idxA === -1) return 1;
+          if (idxB === -1) return -1;
+          return idxA - idxB;
+        });
         if (keys.length > 0) {
-          setActiveDocKey(keys[0]);
+          const firstValidKey = keys.find((k) => {
+            const f = parsed[k];
+            const url = f?.fileUrl || (f?.fileName ? `/api/files/${f.fileName}` : null);
+            return url && url !== '#';
+          });
+          setActiveDocKey(firstValidKey || keys[0]);
           return;
         }
       }
@@ -1435,6 +1540,16 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                 </button>
 
+                <button
+                  onClick={handleRecoverMissingFiles}
+                  disabled={isRecoveringFiles}
+                  className="px-3 py-2 bg-white hover:bg-[#EFF6FF] border-2 border-[#111827] rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                  title="Pindai bucket R2 untuk menautkan kembali berkas pendaftar yang kehilangan URL"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-[#1D4ED8] ${isRecoveringFiles ? 'animate-spin' : ''}`} />
+                  <span>{isRecoveringFiles ? 'Memindai R2...' : 'Pulihkan R2'}</span>
+                </button>
+
                 {selectedIds.length > 0 && (
                   <button
                     onClick={() => setDeleteConfirmModal({ isOpen: true, targetIds: selectedIds })}
@@ -1763,7 +1878,13 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   const fileUrl = fileObj
                     ? fileObj.fileUrl || (fileObj.fileName ? `/api/files/${fileObj.fileName}` : null)
                     : null;
-                  const isImage = fileObj?.name && /\.(jpe?g|png|webp|gif)$/i.test(fileObj.name);
+                  const hasValidUrl = Boolean(fileUrl && fileUrl !== '#');
+                  const checkName = fileObj?.fileName || fileObj?.name || '';
+                  const isImage = /\.(jpe?g|png|webp|gif)$/i.test(checkName);
+                  const isVideo = /\.(mp4|webm|mov)$/i.test(checkName);
+                  const isWordDoc = /\.(docx?|rtf)$/i.test(checkName);
+                  const isUploadingThisSlot =
+                    activeDocKey && uploadingAdminDocKey === `${selectedLeaderboardItem.id}_${activeDocKey}`;
 
                   return (
                     <div className="bg-white border-[3px] border-[#111827] rounded-3xl shadow-[4px_4px_0px_#111827] overflow-hidden flex flex-col lg:h-[calc(100vh-88px)]">
@@ -1825,23 +1946,38 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                           {fileKeys.length === 0 ? (
                             <span className="text-[10px] text-gray-400 font-bold">Tidak ada berkas diunggah.</span>
                           ) : (
-                            fileKeys.map((k) => (
-                              <button
-                                key={k}
-                                type="button"
-                                onClick={() => {
-                                  setActiveDocKey(k);
-                                  setMiddlePanelMode('docs');
-                                }}
-                                className={`px-1.5 py-0.5 border border-[#111827] rounded-md font-black text-[9px] uppercase cursor-pointer transition-colors ${
-                                  middlePanelMode === 'docs' && activeDocKey === k
-                                    ? 'bg-[#1D4ED8] text-white'
-                                    : 'bg-white hover:bg-[#FEF9C3] text-[#111827]'
-                                }`}
-                              >
-                                {DOC_LABELS[k] || k}
-                              </button>
-                            ))
+                            fileKeys.map((k) => {
+                              const itemFile = uploadedFiles[k];
+                              const itemUrl = itemFile?.fileUrl || (itemFile?.fileName ? `/api/files/${itemFile.fileName}` : null);
+                              const isMissing = !itemUrl || itemUrl === '#';
+                              return (
+                                <button
+                                  key={k}
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveDocKey(k);
+                                    setMiddlePanelMode('docs');
+                                  }}
+                                  title={
+                                    isMissing
+                                      ? `${DOC_LABELS[k] || k}: File gagal terunggah dari perangkat pendaftar`
+                                      : `${DOC_LABELS[k] || k}: ${itemFile?.name || ''}`
+                                  }
+                                  className={`px-1.5 py-0.5 border rounded-md font-black text-[9px] uppercase cursor-pointer transition-colors flex items-center gap-0.5 ${
+                                    middlePanelMode === 'docs' && activeDocKey === k
+                                      ? isMissing
+                                        ? 'bg-red-600 text-white border-[#111827]'
+                                        : 'bg-[#1D4ED8] text-white border-[#111827]'
+                                      : isMissing
+                                      ? 'bg-red-50 text-red-700 border-red-500 hover:bg-red-100'
+                                      : 'bg-white hover:bg-[#FEF9C3] text-[#111827] border-[#111827]'
+                                  }`}
+                                >
+                                  <span>{DOC_LABELS[k] || k}</span>
+                                  {isMissing && <span>⚠️</span>}
+                                </button>
+                              );
+                            })
                           )}
                         </div>
                       </div>
@@ -2006,9 +2142,9 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                       ) : (
                         /* MODE B: INLINE DOCUMENT PREVIEW IN MIDDLE COLUMN */
                         <div className="p-2.5 flex-grow flex flex-col overflow-hidden">
-                          {fileObj && fileUrl && fileUrl !== '#' ? (
+                          {fileObj && hasValidUrl ? (
                             <div className="bg-white border-2 border-[#111827] rounded-2xl overflow-hidden flex flex-col flex-grow h-full min-h-[480px]">
-                              <div className="bg-[#EFF6FF] border-b border-[#111827] px-3 py-1.5 flex items-center justify-between text-[11px] font-bold shrink-0">
+                              <div className="bg-[#EFF6FF] border-b border-[#111827] px-3 py-1.5 flex items-center justify-between text-[11px] font-bold shrink-0 gap-2">
                                 <div className="flex items-center gap-1.5 min-w-0">
                                   <span className="px-1.5 py-0.5 bg-[#1D4ED8] text-white rounded text-[9px] font-black uppercase shrink-0">
                                     {DOC_LABELS[activeDocKey] || activeDocKey}
@@ -2017,15 +2153,32 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                     {fileObj.name}
                                   </span>
                                 </div>
-                                <a
-                                  href={fileUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-[#1D4ED8] underline flex items-center gap-1 font-extrabold shrink-0 ml-2"
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                  <span>Tab Baru</span>
-                                </a>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <label className="px-2 py-0.5 bg-[#FFD60A] hover:bg-[#1D4ED8] hover:text-white text-[#111827] border border-[#111827] rounded text-[9px] font-black cursor-pointer flex items-center gap-1 transition-colors">
+                                    <Upload className="w-2.5 h-2.5" />
+                                    <span>{isUploadingThisSlot ? 'Proses...' : 'Ganti File'}</span>
+                                    <input
+                                      type="file"
+                                      className="hidden"
+                                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.heic"
+                                      disabled={Boolean(uploadingAdminDocKey)}
+                                      onChange={(e) => {
+                                        const f = e.target.files?.[0];
+                                        if (f) handleAdminUploadCandidateDoc(selectedLeaderboardItem, activeDocKey, f);
+                                        e.target.value = '';
+                                      }}
+                                    />
+                                  </label>
+                                  <a
+                                    href={fileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[#1D4ED8] underline flex items-center gap-1 font-extrabold shrink-0"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                    <span>{isWordDoc ? 'Unduh DOCX' : 'Tab Baru'}</span>
+                                  </a>
+                                </div>
                               </div>
                               <div className="bg-gray-100 flex-grow flex items-center justify-center overflow-auto p-1">
                                 {isImage ? (
@@ -2034,6 +2187,14 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                     alt={fileObj.name}
                                     className="max-w-full max-h-full object-contain"
                                   />
+                                ) : isVideo ? (
+                                  <video src={fileUrl} controls className="max-w-full max-h-full" />
+                                ) : isWordDoc && typeof window !== 'undefined' && !window.location.hostname.includes('localhost') ? (
+                                  <iframe
+                                    src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(window.location.origin + fileUrl)}`}
+                                    className="w-full h-full border-none"
+                                    title={fileObj.name}
+                                  />
                                 ) : (
                                   <iframe
                                     src={fileUrl}
@@ -2041,6 +2202,49 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                     title={fileObj.name}
                                   />
                                 )}
+                              </div>
+                            </div>
+                          ) : fileObj && !hasValidUrl ? (
+                            <div className="bg-red-50 border-2 border-dashed border-red-400 rounded-2xl p-6 text-center flex-grow flex flex-col items-center justify-center min-h-[480px] space-y-3">
+                              <div className="w-11 h-11 rounded-2xl bg-red-100 border-2 border-red-600 text-red-700 flex items-center justify-center">
+                                <AlertTriangle className="w-6 h-6" />
+                              </div>
+                              <div className="space-y-1 max-w-xs">
+                                <p className="text-xs font-black text-red-800 uppercase">
+                                  {DOC_LABELS[activeDocKey] || activeDocKey} — File Tidak Masuk Server
+                                </p>
+                                <p className="text-[11px] font-bold text-gray-700 break-all">
+                                  Nama tercatat: {fileObj.name} ({fileObj.size || '-'})
+                                </p>
+                                <p className="text-[10px] font-semibold text-red-700 leading-relaxed pt-1">
+                                  Proses unggah berkas ini terputus dari perangkat pendaftar saat pengisian formulir, sehingga hanya nama berkas yang tercatat tanpa file di penyimpanan R2.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                                <label className="px-3.5 py-2 bg-[#FFD60A] hover:bg-[#1D4ED8] hover:text-white text-[#111827] border-2 border-[#111827] rounded-xl text-[11px] font-black shadow-[2px_2px_0px_#111827] cursor-pointer flex items-center gap-1.5 transition-colors">
+                                  <Upload className="w-3.5 h-3.5" />
+                                  <span>{isUploadingThisSlot ? 'Mengunggah...' : 'Unggah Berkas Susulan'}</span>
+                                  <input
+                                    type="file"
+                                    className="hidden"
+                                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.heic"
+                                    disabled={Boolean(uploadingAdminDocKey)}
+                                    onChange={(e) => {
+                                      const f = e.target.files?.[0];
+                                      if (f) handleAdminUploadCandidateDoc(selectedLeaderboardItem, activeDocKey, f);
+                                      e.target.value = '';
+                                    }}
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={handleRecoverMissingFiles}
+                                  disabled={isRecoveringFiles}
+                                  className="px-3 py-2 bg-white hover:bg-[#EFF6FF] text-[#111827] border-2 border-[#111827] rounded-xl text-[11px] font-black cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <RefreshCw className={`w-3.5 h-3.5 ${isRecoveringFiles ? 'animate-spin' : ''}`} />
+                                  <span>{isRecoveringFiles ? 'Memindai R2...' : 'Cek di R2'}</span>
+                                </button>
                               </div>
                             </div>
                           ) : (
@@ -3495,8 +3699,20 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                 <div><span className="text-gray-500">Publikasi Medsos:</span> {selectedItem.bersedia_publikasi}</div>
               </div>
 
-              <div className="bg-[#EFF6FF] p-4 rounded-2xl border border-[#111827] space-y-2">
-                <h4 className="font-black text-[#1D4ED8]">E. BERKAS TERLAMPIR</h4>
+              <div className="bg-[#EFF6FF] p-4 rounded-2xl border border-[#111827] space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="font-black text-[#1D4ED8]">E. BERKAS TERLAMPIR</h4>
+                  <button
+                    type="button"
+                    onClick={handleRecoverMissingFiles}
+                    disabled={isRecoveringFiles}
+                    className="px-2.5 py-1 bg-white hover:bg-[#FEF9C3] border border-[#111827] rounded-lg text-[10px] font-black cursor-pointer flex items-center gap-1"
+                    title="Pindai bucket R2 untuk memulihkan berkas yang belum tertaut"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isRecoveringFiles ? 'animate-spin' : ''}`} />
+                    <span>{isRecoveringFiles ? 'Memindai R2...' : 'Cek & Pulihkan dari R2'}</span>
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {selectedItem.uploaded_files_json &&
                     (() => {
@@ -3505,26 +3721,58 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                         return Object.keys(parsed).map((k) => {
                           const f = parsed[k];
                           const url = f.fileUrl || (f.fileName ? `/api/files/${f.fileName}` : null);
+                          const hasUrl = Boolean(url && url !== '#');
+                          const isUploadingThis = uploadingAdminDocKey === `${selectedItem.id}_${k}`;
                           return (
                             <div
                               key={k}
-                              className="p-2.5 bg-white border border-[#111827] rounded-xl flex items-center justify-between gap-2"
+                              className={`p-2.5 rounded-xl flex items-center justify-between gap-2 border ${
+                                hasUrl ? 'bg-white border-[#111827]' : 'bg-red-50 border-red-500'
+                              }`}
                             >
-                              <div className="truncate">
-                                <span className="font-black text-[10px] text-[#1D4ED8] block uppercase">
-                                  {DOC_LABELS[k] || k}
+                              <div className="truncate min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-black text-[10px] text-[#1D4ED8] uppercase">
+                                    {DOC_LABELS[k] || k}
+                                  </span>
+                                  {!hasUrl && (
+                                    <span className="px-1.5 py-0.2 bg-red-100 text-red-700 border border-red-400 rounded text-[8px] font-black">
+                                      Gagal Unggah dari HP
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xs font-bold truncate block" title={f.name}>
+                                  {f.name}
                                 </span>
-                                <span className="text-xs font-bold truncate block">{f.name}</span>
                               </div>
-                              {url && url !== '#' && (
+                              {hasUrl ? (
                                 <a
                                   href={url}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="px-2.5 py-1 bg-[#FFD60A] border border-[#111827] rounded-lg text-[10px] font-black shrink-0"
+                                  className="px-2.5 py-1 bg-[#FFD60A] hover:bg-[#1D4ED8] hover:text-white border border-[#111827] rounded-lg text-[10px] font-black shrink-0 transition-colors"
                                 >
                                   Buka
                                 </a>
+                              ) : (
+                                <label
+                                  className="px-2 py-1 bg-white hover:bg-[#FFD60A] text-[#111827] border border-[#111827] rounded-lg text-[9px] font-black shrink-0 cursor-pointer flex items-center gap-1 transition-colors"
+                                  title="Unggah berkas susulan untuk dokumen ini"
+                                >
+                                  <Upload className="w-3 h-3" />
+                                  <span>{isUploadingThis ? 'Proses...' : 'Unggah'}</span>
+                                  <input
+                                    type="file"
+                                    className="hidden"
+                                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.heic"
+                                    disabled={Boolean(uploadingAdminDocKey)}
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) handleAdminUploadCandidateDoc(selectedItem, k, file);
+                                      e.target.value = '';
+                                    }}
+                                  />
+                                </label>
                               )}
                             </div>
                           );

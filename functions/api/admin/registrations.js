@@ -149,12 +149,12 @@ export async function onRequestPatch({ request, env }) {
       );
     }
 
-    // Mode B: Single Candidate Update (Status, Catatan, Interview JSON)
-    const { id, status_seleksi, catatan_admin, interview_json } = body;
+    // Mode B: Single Candidate Update (Status, Catatan, Interview JSON, or Uploaded Files JSON)
+    const { id, status_seleksi, catatan_admin, interview_json, uploaded_files_json } = body;
 
-    if (!id || !status_seleksi) {
+    if (!id || (!status_seleksi && typeof uploaded_files_json !== 'string')) {
       return new Response(
-        JSON.stringify({ success: false, message: 'ID dan status seleksi wajib diisi' }),
+        JSON.stringify({ success: false, message: 'ID dan data pembaruan wajib diisi' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
@@ -162,38 +162,54 @@ export async function onRequestPatch({ request, env }) {
     let candidate = null;
 
     if (env && env.DB) {
-      // Ensure interview_json column exists for seamless migration on existing D1 databases
-      if (interview_json !== undefined) {
-        try {
-          await env.DB.prepare(`ALTER TABLE registrations ADD COLUMN interview_json TEXT`).run();
-        } catch (alterErr) {
-          // Column already exists; safe to ignore
-        }
-      }
-
-      if (interview_json !== undefined && catatan_admin !== undefined) {
+      if (typeof uploaded_files_json === 'string' && !status_seleksi) {
         await env.DB.prepare(`
           UPDATE registrations
-          SET status_seleksi = ?, catatan_admin = ?, interview_json = ?
+          SET uploaded_files_json = ?
           WHERE id = ?
-        `).bind(
-          status_seleksi,
-          catatan_admin || '',
-          typeof interview_json === 'string' ? interview_json : JSON.stringify(interview_json),
-          id
-        ).run();
-      } else if (catatan_admin !== undefined) {
-        await env.DB.prepare(`
-          UPDATE registrations
-          SET status_seleksi = ?, catatan_admin = ?
-          WHERE id = ?
-        `).bind(status_seleksi, catatan_admin || '', id).run();
+        `).bind(uploaded_files_json, id).run();
       } else {
-        await env.DB.prepare(`
-          UPDATE registrations
-          SET status_seleksi = ?
-          WHERE id = ?
-        `).bind(status_seleksi, id).run();
+        // Ensure interview_json column exists for seamless migration on existing D1 databases
+        if (interview_json !== undefined) {
+          try {
+            await env.DB.prepare(`ALTER TABLE registrations ADD COLUMN interview_json TEXT`).run();
+          } catch (alterErr) {
+            // Column already exists; safe to ignore
+          }
+        }
+
+        if (interview_json !== undefined && catatan_admin !== undefined) {
+          await env.DB.prepare(`
+            UPDATE registrations
+            SET status_seleksi = ?, catatan_admin = ?, interview_json = ?
+            WHERE id = ?
+          `).bind(
+            status_seleksi,
+            catatan_admin || '',
+            typeof interview_json === 'string' ? interview_json : JSON.stringify(interview_json),
+            id
+          ).run();
+        } else if (catatan_admin !== undefined) {
+          await env.DB.prepare(`
+            UPDATE registrations
+            SET status_seleksi = ?, catatan_admin = ?
+            WHERE id = ?
+          `).bind(status_seleksi, catatan_admin || '', id).run();
+        } else {
+          await env.DB.prepare(`
+            UPDATE registrations
+            SET status_seleksi = ?
+            WHERE id = ?
+          `).bind(status_seleksi, id).run();
+        }
+
+        if (typeof uploaded_files_json === 'string') {
+          await env.DB.prepare(`
+            UPDATE registrations
+            SET uploaded_files_json = ?
+            WHERE id = ?
+          `).bind(uploaded_files_json, id).run();
+        }
       }
 
       candidate = await env.DB.prepare(`SELECT * FROM registrations WHERE id = ?`).bind(id).first();
