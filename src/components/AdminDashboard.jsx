@@ -35,6 +35,9 @@ import {
 import {
   calculateBuktyScores,
   checkBuktyEligibility,
+  ADMIN_PASSING_SCORE,
+  evaluateAdminScreening,
+  isInInterviewPipeline,
   TARGET_PROVINCES,
   STATUS_YATIM_LIST,
   SCHEDULE_EVENTS,
@@ -133,15 +136,18 @@ export default function AdminDashboard({ onLeaveAdmin }) {
   const [statusFilter, setStatusFilter] = useState('Semua');
   const [yatimFilter, setYatimFilter] = useState('Semua');
   const [provinsiFilter, setProvinsiFilter] = useState('Semua');
+  const [adminRecFilter, setAdminRecFilter] = useState('Semua'); // 'Semua' | 'SARAN_LOLOS' | 'SARAN_GUGUR'
+  const [adminSortOrder, setAdminSortOrder] = useState('score_desc'); // 'score_desc' | 'score_asc' | 'newest'
   const [selectedItem, setSelectedItem] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isBatchUpdating, setIsBatchUpdating] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [deleteConfirmModal, setDeleteConfirmModal] = useState({ isOpen: false, targetIds: [] });
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Tabs & Leaderboard States (Persisted across F5 Refresh)
   const [activeTab, setActiveTabState] = useState(() => getInitialAdminTab()); // 'list' | 'leaderboard' | 'approved' | 'announcement'
-  const [onlyQualifiedLeaderboard, setOnlyQualifiedLeaderboard] = useState(true);
+  const [interviewProgressFilter, setInterviewProgressFilter] = useState('ALL'); // 'ALL' | 'UNASSESSED' | 'ASSESSED'
   const [selectedLeaderboardItem, setSelectedLeaderboardItem] = useState(null);
   const [activeDocKey, setActiveDocKey] = useState(null);
   const [middlePanelMode, setMiddlePanelMode] = useState('detail'); // 'detail' | 'docs'
@@ -199,11 +205,9 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     else setApprovedNameSort('default');
   };
 
-  // BUKTY Leaderboard Engine (35% Status Yatim + 45% Beban UKT + 20% Tanggungan)
+  // Stage 2: Interview Pipeline Leaderboard (ONLY candidates who passed Stage 1 Administrative Selection)
   const getLeaderboardData = (ignoreSearch = false) => {
-    const baseList = onlyQualifiedLeaderboard
-      ? registrations.filter((r) => checkBuktyEligibility(r).isQualified)
-      : registrations;
+    const baseList = registrations.filter((r) => isInInterviewPipeline(r));
 
     if (baseList.length === 0) return [];
 
@@ -211,6 +215,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
       ...r,
       ...calculateBuktyScores(r),
       eligibility: checkBuktyEligibility(r),
+      interviewEval: calculateInterviewEvaluation(r.interview_json),
     }));
 
     const sorted = scored.sort((a, b) => {
@@ -224,9 +229,16 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
     if (ignoreSearch) return sorted;
 
+    let filtered = sorted;
+    if (interviewProgressFilter === 'UNASSESSED') {
+      filtered = filtered.filter((x) => !x.interviewEval.isAssessed);
+    } else if (interviewProgressFilter === 'ASSESSED') {
+      filtered = filtered.filter((x) => x.interviewEval.isAssessed);
+    }
+
     const search = leaderboardSearchQuery.trim().toLowerCase();
-    if (!search) return sorted;
-    return sorted.filter(
+    if (!search) return filtered;
+    return filtered.filter(
       (x) =>
         (x.nama || '').toLowerCase().includes(search) ||
         (x.nim || '').toLowerCase().includes(search) ||
@@ -236,14 +248,20 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     );
   };
 
-  // Full Ranked Interview Candidates (Ordered by Interview Final Score, with Top 32 Quota classification)
+  // Stage 3: Full Ranked Interview Candidates (ONLY Stage 1 passed candidates, ordered by Interview Final Score)
   const getInterviewRankedData = (ignoreFilters = false) => {
-    const rankedAll = rankInterviewCandidates(registrations, recipientQuotaLimit);
+    const pipelineList = registrations.filter((r) => isInInterviewPipeline(r));
+    const rankedAll = rankInterviewCandidates(pipelineList, recipientQuotaLimit);
     if (ignoreFilters) return rankedAll;
 
     let filtered = rankedAll;
     if (interviewQuotaFilter === 'ALL_ASSESSED') {
-      filtered = rankedAll.filter((r) => r.interviewEval.isAssessed || r.status_seleksi === 'Diterima' || r.status_seleksi === 'Lolos Administrasi');
+      filtered = rankedAll.filter(
+        (r) =>
+          r.interviewEval.isAssessed ||
+          r.status_seleksi === 'Diterima' ||
+          r.status_seleksi === 'Cadangan'
+      );
     } else if (interviewQuotaFilter === 'TOP_QUOTA') {
       filtered = rankedAll.filter((r) => r.quotaCategory === 'TOP_QUOTA');
     } else if (interviewQuotaFilter === 'CADANGAN') {
@@ -274,9 +292,10 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
   const getApprovedData = () => getInterviewRankedData(false);
 
-  // Sync Top 32 Eligible Interview Candidates automatically to 'Diterima' (and 33+ to 'Lolos Administrasi' / Cadangan)
+  // Sync Top 32 Eligible Interview Candidates automatically to 'Diterima' (and 33+ to 'Cadangan')
   const applyTopQuotaStatusesToList = async (sourceList, showSuccessAlert = false) => {
-    const ranked = rankInterviewCandidates(sourceList, recipientQuotaLimit);
+    const pipelineList = sourceList.filter((r) => isInInterviewPipeline(r));
+    const ranked = rankInterviewCandidates(pipelineList, recipientQuotaLimit);
     const batchUpdates = [];
 
     const nextList = sourceList.map((item) => {
@@ -717,7 +736,8 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     // If autoApplyTop32OnSave is enabled, recalculate Top 32 interview ranking and auto-set Top 32 to 'Diterima'
     let resolvedCandidateStatus = status;
     if (autoApplyTop32OnSave) {
-      const rankedAfterEdit = rankInterviewCandidates(updated, recipientQuotaLimit);
+      const pipelineAfterEdit = updated.filter((r) => isInInterviewPipeline(r));
+      const rankedAfterEdit = rankInterviewCandidates(pipelineAfterEdit, recipientQuotaLimit);
       const editedRankInfo = rankedAfterEdit.find((r) => r.id === id);
       if (editedRankInfo && editedRankInfo.interviewEval.isAssessed) {
         resolvedCandidateStatus = editedRankInfo.autoTargetStatus;
@@ -948,7 +968,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
         setActiveDocKey(null);
       }
     }
-  }, [activeTab, registrations, onlyQualifiedLeaderboard]);
+  }, [activeTab, registrations, interviewProgressFilter]);
 
   const handleSaveCurrentInterview = async () => {
     if (!selectedLeaderboardItem) return;
@@ -1235,6 +1255,38 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     } catch (e) {}
   };
 
+  const handleBatchUpdateStatus = async (targetIds, newStatus, confirmMessage = null) => {
+    if (!Array.isArray(targetIds) || targetIds.length === 0) return;
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
+
+    setIsBatchUpdating(true);
+    const idSet = new Set(targetIds);
+    const updates = targetIds.map((id) => ({ id, status_seleksi: newStatus }));
+    const nextList = registrations.map((item) =>
+      idSet.has(item.id) ? { ...item, status_seleksi: newStatus } : item
+    );
+
+    setRegistrations(nextList);
+    localStorage.setItem(LOCAL_SUBMISSIONS_KEY, JSON.stringify(nextList));
+    setSelectedIds((prev) => prev.filter((id) => !idSet.has(id)));
+
+    if (selectedItem && idSet.has(selectedItem.id)) {
+      setSelectedItem({ ...selectedItem, status_seleksi: newStatus });
+    }
+
+    try {
+      await fetch('/api/admin/registrations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates }),
+      });
+    } catch (err) {
+      console.error('Batch status update failed:', err);
+    } finally {
+      setIsBatchUpdating(false);
+    }
+  };
+
   const handleToggleSelectAll = (dataset) => {
     const allIds = dataset.map((r) => r.id);
     const isAllSelected = allIds.every((id) => selectedIds.includes(id));
@@ -1270,21 +1322,46 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     setDeleteConfirmModal({ isOpen: false, targetIds: [] });
   };
 
-  // Filtered registrations for Tab 1
-  const filteredData = registrations.filter((r) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch =
-      (r.nama || '').toLowerCase().includes(q) ||
-      (r.perguruan_tinggi || '').toLowerCase().includes(q) ||
-      (r.nim || '').toLowerCase().includes(q) ||
-      (r.provinsi || '').toLowerCase().includes(q) ||
-      (r.reg_id || '').toLowerCase().includes(q);
+  // Stage 1: Enrich all registrations with MS/TMS + Registration Score (0-100) + >=75 Recommendation
+  const screenedRegistrations = registrations.map((r) => ({
+    ...r,
+    adminScreening: evaluateAdminScreening(r, ADMIN_PASSING_SCORE),
+  }));
 
-    const matchesStatus = statusFilter === 'Semua' || r.status_seleksi === statusFilter;
-    const matchesYatim = yatimFilter === 'Semua' || (r.status_yatim || '') === yatimFilter;
-    const matchesProv = provinsiFilter === 'Semua' || (r.provinsi || '') === provinsiFilter;
-    return matchesSearch && matchesStatus && matchesYatim && matchesProv;
-  });
+  // Filtered & sorted registrations for Tab 1 (Pendaftar & Seleksi Administrasi)
+  const filteredData = screenedRegistrations
+    .filter((r) => {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch =
+        (r.nama || '').toLowerCase().includes(q) ||
+        (r.perguruan_tinggi || '').toLowerCase().includes(q) ||
+        (r.nim || '').toLowerCase().includes(q) ||
+        (r.provinsi || '').toLowerCase().includes(q) ||
+        (r.reg_id || '').toLowerCase().includes(q);
+
+      const matchesStatus = statusFilter === 'Semua' || (r.status_seleksi || 'Pending') === statusFilter;
+      const matchesYatim = yatimFilter === 'Semua' || (r.status_yatim || '') === yatimFilter;
+      const matchesProv = provinsiFilter === 'Semua' || (r.provinsi || '') === provinsiFilter;
+      const matchesAdminRec =
+        adminRecFilter === 'Semua' || r.adminScreening.recommendation === adminRecFilter;
+
+      return matchesSearch && matchesStatus && matchesYatim && matchesProv && matchesAdminRec;
+    })
+    .sort((a, b) => {
+      if (adminSortOrder === 'score_desc') {
+        if (b.adminScreening.scores.score_total !== a.adminScreening.scores.score_total) {
+          return b.adminScreening.scores.score_total - a.adminScreening.scores.score_total;
+        }
+        return a.id - b.id;
+      }
+      if (adminSortOrder === 'score_asc') {
+        if (a.adminScreening.scores.score_total !== b.adminScreening.scores.score_total) {
+          return a.adminScreening.scores.score_total - b.adminScreening.scores.score_total;
+        }
+        return a.id - b.id;
+      }
+      return b.id - a.id;
+    });
 
   // Metrics
   const totalPendaftar = registrations.length;
@@ -1293,12 +1370,12 @@ export default function AdminDashboard({ onLeaveAdmin }) {
       .map((r) => (r.perguruan_tinggi || '').trim().replace(/\s+/g, ' ').toLowerCase())
       .filter(Boolean)
   ).size;
-  const yatimCount = registrations.filter((r) =>
-    ['yatim', 'yatim piatu'].includes((r.status_yatim || '').toLowerCase())
-  ).length;
-  const lolosCount = registrations.filter(
-    (r) => r.status_seleksi === 'Lolos Administrasi' || r.status_seleksi === 'Diterima'
-  ).length;
+  const saranLolosCount = screenedRegistrations.filter((r) => r.adminScreening.isRecommendedPass).length;
+  const saranGugurCount = screenedRegistrations.filter((r) => !r.adminScreening.isRecommendedPass).length;
+  const pendingSaranGugurIds = screenedRegistrations
+    .filter((r) => (!r.status_seleksi || r.status_seleksi === 'Pending') && !r.adminScreening.isRecommendedPass)
+    .map((r) => r.id);
+  const interviewPipelineCount = registrations.filter((r) => isInInterviewPipeline(r)).length;
   const pendingCount = registrations.filter((r) => !r.status_seleksi || r.status_seleksi === 'Pending').length;
   const totalNominal = registrations.reduce((acc, curr) => {
     const val = parseInt((curr.nominal_ukt || '0').replace(/\D/g, ''), 10) || 0;
@@ -1308,6 +1385,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
     statusFilter !== 'Semua' ||
     yatimFilter !== 'Semua' ||
     provinsiFilter !== 'Semua' ||
+    adminRecFilter !== 'Semua' ||
     searchQuery.trim() !== '';
 
   // LOGIN PAGE
@@ -1377,10 +1455,10 @@ export default function AdminDashboard({ onLeaveAdmin }) {
             {/* 4 Tab Selector */}
             <div className="flex bg-[#EFF6FF] p-1 border-2 border-[#111827] rounded-xl gap-1 flex-wrap">
               {[
-                { key: 'list', label: 'Pendaftar' },
-                { key: 'leaderboard', label: 'Leaderboard & Wawancara' },
-                { key: 'approved', label: `Ranking Wawancara (Kuota ${recipientQuotaLimit})` },
-                { key: 'announcement', label: 'Jadwal & Pengumuman' },
+                { key: 'list', label: `1. Pendaftar & Administrasi (${totalPendaftar})` },
+                { key: 'leaderboard', label: `2. Leaderboard & Wawancara (${interviewPipelineCount})` },
+                { key: 'approved', label: `3. Ranking Wawancara (Kuota ${recipientQuotaLimit})` },
+                { key: 'announcement', label: '4. Jadwal & Pengumuman' },
               ].map((t) => (
                 <button
                   key={t.key}
@@ -1411,16 +1489,16 @@ export default function AdminDashboard({ onLeaveAdmin }) {
       </header>
 
       <main className="flex-grow w-full max-w-none px-4 sm:px-6 lg:px-8 py-4 space-y-5 transition-all">
-        {/* TAB 1: PENDAFTAR */}
+        {/* TAB 1: PENDAFTAR & SELEKSI ADMINISTRASI */}
         {activeTab === 'list' && (
           <>
-            {/* 6 KPI Cards */}
+            {/* 6 KPI Cards (Tahap 1: Pendaftar & Seleksi Administrasi) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-extrabold text-gray-500 uppercase">Total Pendaftar</p>
                   <h3 className="text-2xl font-black text-[#111827] font-heading mt-0.5">{totalPendaftar}</h3>
-                  <p className="text-[10px] font-bold text-[#1D4ED8] mt-0.5">{uniqueKampusCount} Kampus Unik</p>
+                  <p className="text-[10px] font-bold text-[#1D4ED8] mt-0.5">{uniqueKampusCount} Kampus PTN</p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-[#DBEAFE] text-[#1D4ED8] border-2 border-[#111827] flex items-center justify-center shrink-0">
                   <Users className="w-5 h-5" />
@@ -1429,22 +1507,45 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
               <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-extrabold text-gray-500 uppercase">Kampus Unik (PTN)</p>
-                  <h3 className="text-2xl font-black text-[#1D4ED8] font-heading mt-0.5">{uniqueKampusCount}</h3>
-                  <p className="text-[10px] font-bold text-gray-500 mt-0.5">Perguruan Tinggi</p>
+                  <p className="text-[10px] font-extrabold text-gray-500 uppercase">Saran Lolos Admin</p>
+                  <h3 className="text-2xl font-black text-[#15803D] font-heading mt-0.5">{saranLolosCount}</h3>
+                  <p className="text-[10px] font-bold text-gray-500 mt-0.5">MS &amp; Skor ≥ {ADMIN_PASSING_SCORE}</p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#1D4ED8] border-2 border-[#111827] flex items-center justify-center shrink-0">
-                  <Building2 className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-xl bg-[#DCFCE7] text-[#15803D] border-2 border-[#111827] flex items-center justify-center shrink-0">
+                  <Award className="w-5 h-5" />
                 </div>
               </div>
 
               <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-extrabold text-gray-500 uppercase">Yatim / Yatim Piatu</p>
-                  <h3 className="text-2xl font-black text-[#1D4ED8] font-heading mt-0.5">{yatimCount}</h3>
+                  <p className="text-[10px] font-extrabold text-gray-500 uppercase">Saran Gugur Admin</p>
+                  <h3 className="text-2xl font-black text-red-600 font-heading mt-0.5">{saranGugurCount}</h3>
+                  <p className="text-[10px] font-bold text-gray-500 mt-0.5">Skor &lt; {ADMIN_PASSING_SCORE} / TMS</p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-[#FFD60A] text-[#111827] border-2 border-[#111827] flex items-center justify-center shrink-0">
-                  <HeartHandshake className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 border-2 border-[#111827] flex items-center justify-center shrink-0">
+                  <XCircle className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-extrabold text-gray-500 uppercase">Siap Wawancara</p>
+                  <h3 className="text-2xl font-black text-[#1D4ED8] font-heading mt-0.5">{interviewPipelineCount}</h3>
+                  <p className="text-[10px] font-bold text-gray-500 mt-0.5">Masuk Tab Wawancara</p>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#1D4ED8] border-2 border-[#111827] flex items-center justify-center shrink-0">
+                  <CheckCircle className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-extrabold text-gray-500 uppercase">Pending Review</p>
+                  <h3 className="text-2xl font-black text-amber-600 font-heading mt-0.5">{pendingCount}</h3>
+                  <p className="text-[10px] font-bold text-gray-500 mt-0.5">Belum diputuskan</p>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-[#FEF9C3] text-amber-700 border-2 border-[#111827] flex items-center justify-center shrink-0">
+                  <Clock className="w-5 h-5" />
                 </div>
               </div>
 
@@ -1454,131 +1555,206 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   <h3 className="text-lg font-black text-[#15803D] font-heading mt-0.5">
                     Rp {(totalNominal / 1000000).toFixed(1)} Jt
                   </h3>
+                  <p className="text-[10px] font-bold text-gray-500 mt-0.5">Seluruh pendaftar</p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-[#DCFCE7] text-[#15803D] border-2 border-[#111827] flex items-center justify-center shrink-0">
                   <DollarSign className="w-5 h-5" />
                 </div>
               </div>
-
-              <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] font-extrabold text-gray-500 uppercase">Lolos / Diterima</p>
-                  <h3 className="text-2xl font-black text-[#15803D] font-heading mt-0.5">{lolosCount}</h3>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-[#DCFCE7] text-[#15803D] border-2 border-[#111827] flex items-center justify-center shrink-0">
-                  <CheckCircle className="w-5 h-5" />
-                </div>
-              </div>
-
-              <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] font-extrabold text-gray-500 uppercase">Pending Review</p>
-                  <h3 className="text-2xl font-black text-amber-600 font-heading mt-0.5">{pendingCount}</h3>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-[#FEF9C3] text-amber-700 border-2 border-[#111827] flex items-center justify-center shrink-0">
-                  <Clock className="w-5 h-5" />
-                </div>
-              </div>
             </div>
 
-            {/* Filter & Action Bar */}
-            <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] flex flex-col lg:flex-row gap-3 items-center justify-between">
-              <div className="relative w-full lg:w-72">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Cari Nama / NIM / PTN / Provinsi..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="form-input pl-9 pr-3 py-2 text-xs font-bold"
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
-                <div className="flex items-center gap-1.5 bg-[#EFF6FF] border-2 border-[#111827] px-2.5 py-1.5 rounded-xl text-xs font-bold">
-                  <Filter className="w-3.5 h-3.5 text-[#1D4ED8]" />
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="bg-transparent font-bold outline-none cursor-pointer"
-                  >
-                    <option value="Semua">Semua Status</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Lolos Administrasi">Lolos Administrasi</option>
-                    <option value="Tidak Lolos">Tidak Lolos</option>
-                    <option value="Diterima">Diterima</option>
-                  </select>
+            {/* Stage 1 Action & Filter Bar */}
+            <div className="bg-white border-2 border-[#111827] p-4 rounded-2xl shadow-[4px_4px_0px_#111827] space-y-3">
+              <div className="flex flex-col lg:flex-row gap-3 items-center justify-between">
+                <div className="relative w-full lg:w-72">
+                  <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Cari Nama / NIM / PTN / Provinsi..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="form-input pl-9 pr-3 py-2 text-xs font-bold"
+                  />
                 </div>
 
-                <select
-                  value={yatimFilter}
-                  onChange={(e) => setYatimFilter(e.target.value)}
-                  className="bg-[#FEF9C3] border-2 border-[#111827] px-2.5 py-1.5 rounded-xl text-xs font-bold outline-none cursor-pointer"
-                >
-                  <option value="Semua">Semua Status Ortu</option>
-                  {STATUS_YATIM_LIST.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
+                  <div className="flex items-center gap-1.5 bg-[#EFF6FF] border-2 border-[#111827] px-2.5 py-1.5 rounded-xl text-xs font-bold">
+                    <Filter className="w-3.5 h-3.5 text-[#1D4ED8]" />
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="bg-transparent font-bold outline-none cursor-pointer"
+                    >
+                      <option value="Semua">Semua Status</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Lolos Administrasi">Lolos Administrasi</option>
+                      <option value="Diterima">Diterima (Final)</option>
+                      <option value="Cadangan">Cadangan</option>
+                      <option value="Tidak Lolos">Tidak Lolos</option>
+                    </select>
+                  </div>
 
-                <select
-                  value={provinsiFilter}
-                  onChange={(e) => setProvinsiFilter(e.target.value)}
-                  className="bg-white border-2 border-[#111827] px-2.5 py-1.5 rounded-xl text-xs font-bold outline-none cursor-pointer"
-                >
-                  <option value="Semua">Semua Provinsi</option>
-                  {TARGET_PROVINCES.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-
-                <button
-                  onClick={fetchRegistrations}
-                  className="p-2 bg-white border-2 border-[#111827] rounded-xl hover:bg-[#EFF6FF] cursor-pointer"
-                  title="Refresh Data"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-                </button>
-
-                <button
-                  onClick={handleRecoverMissingFiles}
-                  disabled={isRecoveringFiles}
-                  className="px-3 py-2 bg-white hover:bg-[#EFF6FF] border-2 border-[#111827] rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-                  title="Pindai bucket R2 untuk menautkan kembali berkas pendaftar yang kehilangan URL"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 text-[#1D4ED8] ${isRecoveringFiles ? 'animate-spin' : ''}`} />
-                  <span>{isRecoveringFiles ? 'Memindai R2...' : 'Pulihkan R2'}</span>
-                </button>
-
-                {selectedIds.length > 0 && (
-                  <button
-                    onClick={() => setDeleteConfirmModal({ isOpen: true, targetIds: selectedIds })}
-                    className="bg-red-600 text-white border-2 border-[#111827] px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-[2px_2px_0px_#111827] cursor-pointer"
+                  <select
+                    value={adminRecFilter}
+                    onChange={(e) => setAdminRecFilter(e.target.value)}
+                    className="bg-[#DCFCE7] border-2 border-[#111827] px-2.5 py-1.5 rounded-xl text-xs font-bold outline-none cursor-pointer"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Hapus ({selectedIds.length})</span>
-                  </button>
-                )}
+                    <option value="Semua">Semua Saran Admin</option>
+                    <option value="SARAN_LOLOS">Saran Lolos (MS &amp; ≥ {ADMIN_PASSING_SCORE})</option>
+                    <option value="SARAN_GUGUR">Saran Gugur (&lt; {ADMIN_PASSING_SCORE} / TMS)</option>
+                  </select>
 
-                {isFilterActive && filteredData.length < registrations.length && (
+                  <select
+                    value={adminSortOrder}
+                    onChange={(e) => setAdminSortOrder(e.target.value)}
+                    className="bg-white border-2 border-[#111827] px-2.5 py-1.5 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                  >
+                    <option value="score_desc">Urut: Skor Tertinggi</option>
+                    <option value="score_asc">Urut: Skor Terendah</option>
+                    <option value="newest">Urut: Terbaru</option>
+                  </select>
+
+                  <select
+                    value={yatimFilter}
+                    onChange={(e) => setYatimFilter(e.target.value)}
+                    className="bg-[#FEF9C3] border-2 border-[#111827] px-2.5 py-1.5 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                  >
+                    <option value="Semua">Semua Status Ortu</option>
+                    {STATUS_YATIM_LIST.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={provinsiFilter}
+                    onChange={(e) => setProvinsiFilter(e.target.value)}
+                    className="bg-white border-2 border-[#111827] px-2.5 py-1.5 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                  >
+                    <option value="Semua">Semua Provinsi</option>
+                    {TARGET_PROVINCES.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Bottom Row: Stage 1 Batch Screening Controls & Export */}
+              <div className="pt-2.5 border-t-2 border-dashed border-[#111827]/15 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {pendingSaranGugurIds.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={isBatchUpdating}
+                      onClick={() =>
+                        handleBatchUpdateStatus(
+                          pendingSaranGugurIds,
+                          'Tidak Lolos',
+                          `Gugurkan otomatis ${pendingSaranGugurIds.length} pendaftar berstatus Pending yang memiliki Skor < ${ADMIN_PASSING_SCORE} atau TMS?\n\nStatus mereka akan diubah menjadi "Tidak Lolos" dan tidak masuk ke Tab Wawancara.`
+                        )
+                      }
+                      className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white border-2 border-[#111827] rounded-xl text-xs font-black flex items-center gap-1.5 shadow-[2px_2px_0px_#111827] cursor-pointer disabled:opacity-60"
+                      title={`Gugurkan seluruh pendaftar Pending dengan skor < ${ADMIN_PASSING_SCORE} atau TMS`}
+                    >
+                      <Zap className="w-3.5 h-3.5 text-[#FFD60A]" />
+                      <span>
+                        {isBatchUpdating
+                          ? 'Memproses...'
+                          : `Gugurkan Saran Gugur (${pendingSaranGugurIds.length})`}
+                      </span>
+                    </button>
+                  )}
+
+                  {selectedIds.length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={isBatchUpdating}
+                        onClick={() =>
+                          handleBatchUpdateStatus(
+                            selectedIds,
+                            'Lolos Administrasi',
+                            `Loloskan ${selectedIds.length} pendaftar terpilih ke tahap Wawancara (status: Lolos Administrasi)?`
+                          )
+                        }
+                        className="bg-[#15803D] hover:bg-[#14532D] text-white border-2 border-[#111827] px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-[2px_2px_0px_#111827] cursor-pointer disabled:opacity-60"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>Loloskan Admin ({selectedIds.length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isBatchUpdating}
+                        onClick={() =>
+                          handleBatchUpdateStatus(
+                            selectedIds,
+                            'Tidak Lolos',
+                            `Ubah status ${selectedIds.length} pendaftar terpilih menjadi "Tidak Lolos"?`
+                          )
+                        }
+                        className="bg-amber-600 hover:bg-amber-700 text-white border-2 border-[#111827] px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-[2px_2px_0px_#111827] cursor-pointer disabled:opacity-60"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Gugurkan ({selectedIds.length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirmModal({ isOpen: true, targetIds: selectedIds })}
+                        className="bg-red-600 text-white border-2 border-[#111827] px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-[2px_2px_0px_#111827] cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus ({selectedIds.length})</span>
+                      </button>
+                    </>
+                  )}
+
+                  {selectedIds.length === 0 && pendingSaranGugurIds.length === 0 && (
+                    <span className="text-[11px] font-bold text-gray-600">
+                      Tip: Centang pendaftar yang memenuhi syarat lalu klik <strong>Loloskan Admin</strong> agar otomatis masuk ke <strong>Tab 2. Leaderboard &amp; Wawancara</strong>.
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={() => handleExportPendaftarCSV(true)}
-                    className="btn-secondary py-2 px-3.5 text-xs"
-                    title="Ekspor hanya data yang sesuai filter saat ini"
+                    onClick={fetchRegistrations}
+                    className="p-2 bg-white border-2 border-[#111827] rounded-xl hover:bg-[#EFF6FF] cursor-pointer"
+                    title="Refresh Data"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                  </button>
+
+                  <button
+                    onClick={handleRecoverMissingFiles}
+                    disabled={isRecoveringFiles}
+                    className="px-3 py-2 bg-white hover:bg-[#EFF6FF] border-2 border-[#111827] rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                    title="Pindai bucket R2 untuk menautkan kembali berkas pendaftar yang kehilangan URL"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-[#1D4ED8] ${isRecoveringFiles ? 'animate-spin' : ''}`} />
+                    <span>{isRecoveringFiles ? 'Memindai R2...' : 'Pulihkan R2'}</span>
+                  </button>
+
+                  {isFilterActive && filteredData.length < registrations.length && (
+                    <button
+                      onClick={() => handleExportPendaftarCSV(true)}
+                      className="btn-secondary py-2 px-3.5 text-xs"
+                      title="Ekspor hanya data yang sesuai filter saat ini"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Ekspor Filter ({filteredData.length})</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => handleExportPendaftarCSV(false)}
+                    className="btn-yellow py-2 px-4 text-xs"
+                    title="Ekspor seluruh data pendaftar ke CSV"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Ekspor Filter ({filteredData.length})</span>
+                    <span>Ekspor CSV ({totalPendaftar})</span>
                   </button>
-                )}
-
-                <button
-                  onClick={() => handleExportPendaftarCSV(false)}
-                  className="btn-yellow py-2 px-4 text-xs"
-                  title="Ekspor seluruh data pendaftar ke CSV"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Ekspor CSV ({totalPendaftar})</span>
-                </button>
+                </div>
               </div>
             </div>
 
@@ -1596,11 +1772,11 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                       />
                     </th>
                     <th className="p-3.5">No. Reg / Syarat</th>
-                    <th className="p-3.5">Mahasiswa & Status Ortu</th>
-                    <th className="p-3.5">Kampus & Wilayah</th>
-                    <th className="p-3.5">IPK</th>
-                    <th className="p-3.5">UKT / Ortu</th>
-                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5">Mahasiswa &amp; Status Ortu</th>
+                    <th className="p-3.5">Kampus &amp; Wilayah</th>
+                    <th className="p-3.5">IPK / UKT</th>
+                    <th className="p-3.5">Skor &amp; Saran Admin</th>
+                    <th className="p-3.5">Status Seleksi</th>
                     <th className="p-3.5 text-center">Aksi</th>
                   </tr>
                 </thead>
@@ -1614,7 +1790,9 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   ) : (
                     filteredData.map((item) => {
                       const isSelected = selectedIds.includes(item.id);
-                      const elig = checkBuktyEligibility(item);
+                      const screening = item.adminScreening;
+                      const elig = screening.eligibility;
+                      const scores = screening.scores;
                       return (
                         <tr key={item.id} className={`transition-colors ${isSelected ? 'bg-[#EFF6FF]' : 'hover:bg-[#FFFDF5]'}`}>
                           <td className="p-3.5 text-center">
@@ -1661,13 +1839,42 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                             </div>
                           </td>
                           <td className="p-3.5">
-                            <span className="font-black text-[#1D4ED8] bg-[#DBEAFE] px-2 py-0.5 rounded border border-[#1D4ED8]">
-                              {item.ipk}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-black text-[#1D4ED8] bg-[#DBEAFE] px-1.5 py-0.5 rounded border border-[#1D4ED8] text-[10px]">
+                                IPK {item.ipk}
+                              </span>
+                            </div>
+                            <div className="font-black text-[#15803D] mt-1">Rp {item.nominal_ukt}</div>
+                            <div className="text-[10px] text-gray-500">Ortu: Rp {item.penghasilan_ortu}/bln</div>
                           </td>
                           <td className="p-3.5">
-                            <div className="font-black text-[#15803D]">Rp {item.nominal_ukt}</div>
-                            <div className="text-[10px] text-gray-500">Ortu: Rp {item.penghasilan_ortu}/bln</div>
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`font-mono-code font-black text-sm ${
+                                  scores.score_total >= ADMIN_PASSING_SCORE ? 'text-[#15803D]' : 'text-red-600'
+                                }`}
+                              >
+                                {scores.score_total}
+                              </span>
+                              <span className="text-[9px] font-bold text-gray-400">/ 100</span>
+                            </div>
+                            <div className="text-[9px] text-gray-500 font-mono-code">
+                              Y:{scores.score_yatim} • U:{scores.score_ratio} • T:{scores.score_tanggungan}
+                            </div>
+                            <div className="mt-1">
+                              {screening.isRecommendedPass ? (
+                                <span className="inline-block px-2 py-0.5 rounded bg-[#DCFCE7] text-[#15803D] border border-[#15803D] text-[9px] font-black">
+                                  Saran Lolos (≥ {ADMIN_PASSING_SCORE})
+                                </span>
+                              ) : (
+                                <span
+                                  title={screening.reasons.join(' • ')}
+                                  className="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-500 text-[9px] font-black cursor-help"
+                                >
+                                  Saran Gugur ({screening.isBelowPassingScore ? `< ${ADMIN_PASSING_SCORE}` : 'TMS'})
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-3.5">
                             <select
@@ -1678,15 +1885,18 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                   ? 'bg-[#DCFCE7] text-[#15803D] border-[#15803D]'
                                   : item.status_seleksi === 'Diterima'
                                   ? 'bg-[#DBEAFE] text-[#1D4ED8] border-[#1D4ED8]'
+                                  : item.status_seleksi === 'Cadangan'
+                                  ? 'bg-[#FEF9C3] text-amber-800 border-amber-500'
                                   : item.status_seleksi === 'Tidak Lolos'
                                   ? 'bg-red-100 text-red-700 border-red-600'
-                                  : 'bg-[#FEF9C3] text-amber-800 border-amber-500'
+                                  : 'bg-gray-100 text-gray-700 border-gray-400'
                               }`}
                             >
                               <option value="Pending">Pending</option>
                               <option value="Lolos Administrasi">Lolos Administrasi</option>
                               <option value="Tidak Lolos">Tidak Lolos</option>
-                              <option value="Diterima">Diterima</option>
+                              <option value="Cadangan">Cadangan</option>
+                              <option value="Diterima">Diterima (Final)</option>
                             </select>
                           </td>
                           <td className="p-3.5 text-center">
@@ -1694,7 +1904,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                               <button
                                 onClick={() => setSelectedItem(item)}
                                 className="p-1.5 bg-white border-2 border-[#111827] hover:bg-[#FFD60A] rounded-lg transition-colors cursor-pointer"
-                                title="Lihat Detail"
+                                title="Lihat Detail & Berkas"
                               >
                                 <Eye className="w-4 h-4" />
                               </button>
@@ -1739,16 +1949,31 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                   </button>
                 </div>
 
-                {/* Toggle Qualified Filter */}
-                <label className="flex items-center gap-2 mb-2 bg-[#EFF6FF] border border-[#111827] px-2.5 py-1.5 rounded-xl text-[10px] font-extrabold cursor-pointer shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={onlyQualifiedLeaderboard}
-                    onChange={(e) => setOnlyQualifiedLeaderboard(e.target.checked)}
-                    className="accent-[#1D4ED8]"
-                  />
-                  <span>Filter Ketat BUKTY (MS Syarat Utama)</span>
-                </label>
+                {/* Stage 2 Pipeline Banner + Quick Interview Progress Filter */}
+                <div className="mb-2 bg-[#DCFCE7] border border-[#15803D] px-2.5 py-1.5 rounded-xl text-[10px] font-extrabold text-[#14532D] shrink-0">
+                  Khusus peserta <strong>Lolos Administrasi</strong> dari Tab 1 ({interviewPipelineCount} kandidat)
+                </div>
+
+                <div className="grid grid-cols-3 gap-1 mb-2 shrink-0">
+                  {[
+                    { key: 'ALL', label: 'Semua' },
+                    { key: 'UNASSESSED', label: 'Belum WWC' },
+                    { key: 'ASSESSED', label: 'Sudah WWC' },
+                  ].map((f) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => setInterviewProgressFilter(f.key)}
+                      className={`py-1 px-1.5 rounded-lg border text-[9.5px] font-black cursor-pointer transition-all ${
+                        interviewProgressFilter === f.key
+                          ? 'bg-[#1D4ED8] text-white border-[#111827] shadow-[1.5px_1.5px_0px_#111827]'
+                          : 'bg-[#FFFDF5] text-[#111827] border-[#111827]/30 hover:bg-[#EFF6FF]'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
 
                 <div className="relative mb-2 shrink-0">
                   <Search className="w-3.5 h-3.5 absolute left-3 top-2 text-gray-400" />
@@ -1763,20 +1988,36 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
                 <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 max-h-[520px] lg:max-h-none">
                   {getLeaderboardData().length === 0 ? (
-                    <div className="p-8 text-center text-gray-500 font-bold text-xs">
-                      Belum ada pendaftar pada filter leaderboard ini.
+                    <div className="p-6 text-center text-gray-500 font-bold text-xs space-y-3">
+                      <p>
+                        {interviewPipelineCount === 0
+                          ? 'Belum ada pendaftar yang diloloskan dari Seleksi Administrasi (Tab 1).'
+                          : 'Tidak ada kandidat pada filter wawancara ini.'}
+                      </p>
+                      {interviewPipelineCount === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('list')}
+                          className="btn-yellow py-1.5 px-3 text-[10px] mx-auto"
+                        >
+                          <span>Ke Tab 1: Seleksi Administrasi</span>
+                        </button>
+                      )}
                     </div>
                   ) : (
                     getLeaderboardData().map((item, index) => {
                       const isSelected = selectedLeaderboardItem && selectedLeaderboardItem.id === item.id;
-                      let badgeStyle = 'bg-[#FEF9C3] text-amber-800 border-amber-400';
+                      let badgeStyle = 'bg-gray-100 text-gray-700 border-gray-400';
                       let badgeText = 'Pending';
                       if (item.status_seleksi === 'Lolos Administrasi') {
                         badgeStyle = 'bg-[#DCFCE7] text-[#15803D] border-[#15803D]';
-                        badgeText = 'Lolos';
+                        badgeText = 'Siap WWC';
                       } else if (item.status_seleksi === 'Diterima') {
                         badgeStyle = 'bg-[#DBEAFE] text-[#1D4ED8] border-[#1D4ED8]';
                         badgeText = 'Diterima';
+                      } else if (item.status_seleksi === 'Cadangan') {
+                        badgeStyle = 'bg-[#FEF9C3] text-amber-800 border-amber-500';
+                        badgeText = 'Cadangan';
                       } else if (item.status_seleksi === 'Tidak Lolos') {
                         badgeStyle = 'bg-red-100 text-red-700 border-red-400';
                         badgeText = 'Gugur';
@@ -2675,17 +2916,17 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                         <div className="flex items-center justify-between gap-2">
                           <div className="grid grid-cols-4 gap-1 flex-1">
                             {[
-                              { val: 'Pending', label: 'Pending' },
-                              { val: 'Lolos Administrasi', label: 'Lolos / Cadangan' },
+                              { val: 'Lolos Administrasi', label: 'Siap WWC' },
                               { val: 'Diterima', label: 'Diterima' },
+                              { val: 'Cadangan', label: 'Cadangan' },
                               { val: 'Tidak Lolos', label: 'Gugur' },
                             ].map((st) => {
                               let cls = 'bg-white text-gray-700 border-[#111827]/40 hover:bg-gray-50';
                               if (leaderboardStatus === st.val) {
                                 if (st.val === 'Lolos Administrasi') cls = 'bg-[#15803D] text-white border-[#111827]';
                                 else if (st.val === 'Diterima') cls = 'bg-[#1D4ED8] text-white border-[#111827]';
+                                else if (st.val === 'Cadangan') cls = 'bg-[#FFD60A] text-[#111827] border-[#111827]';
                                 else if (st.val === 'Tidak Lolos') cls = 'bg-red-600 text-white border-[#111827]';
-                                else cls = 'bg-[#FFD60A] text-[#111827] border-[#111827]';
                               }
                               return (
                                 <button
@@ -2707,7 +2948,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                 if (evalResult.recommendation === 'DIREKOMENDASIKAN') {
                                   setLeaderboardStatus('Diterima');
                                 } else if (evalResult.recommendation === 'CADANGAN') {
-                                  setLeaderboardStatus('Lolos Administrasi');
+                                  setLeaderboardStatus('Cadangan');
                                 } else if (evalResult.recommendation === 'TIDAK DIREKOMENDASIKAN') {
                                   setLeaderboardStatus('Tidak Lolos');
                                 }
@@ -2816,10 +3057,10 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                     <div>
                       <p className="text-[10px] font-extrabold text-gray-500 uppercase">Total Sudah Diwawancara</p>
                       <h3 className="text-2xl font-black text-[#1D4ED8] font-heading mt-0.5">
-                        {totalAssessedCount} <span className="text-xs text-gray-400">/ {registrations.length}</span>
+                        {totalAssessedCount} <span className="text-xs text-gray-400">/ {allRanked.length}</span>
                       </h3>
                       <p className="text-[10px] font-bold text-gray-500 mt-0.5">
-                        Belum diwawancara: {belumWawancaraList.length} pendaftar
+                        Menunggu wawancara: {belumWawancaraList.length} lolos admin
                       </p>
                     </div>
                     <div className="w-11 h-11 rounded-2xl bg-[#DBEAFE] text-[#1D4ED8] border-2 border-[#111827] flex items-center justify-center shrink-0">
@@ -2867,7 +3108,7 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                         },
                         {
                           key: 'ALL',
-                          label: `Seluruh Pendaftar (${allRanked.length})`,
+                          label: `Semua Lolos Admin (${allRanked.length})`,
                         },
                       ].map((tabItem) => (
                         <button
@@ -3179,11 +3420,13 @@ export default function AdminDashboard({ onLeaveAdmin }) {
 
                                       <div className="flex items-center gap-1.5">
                                         <select
-                                          value={item.status_seleksi || 'Pending'}
+                                          value={item.status_seleksi || 'Lolos Administrasi'}
                                           onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
                                           className={`px-2 py-1 rounded-lg font-extrabold text-[10px] outline-none cursor-pointer border ${
                                             item.status_seleksi === 'Diterima'
                                               ? 'bg-[#DBEAFE] text-[#1D4ED8] border-[#1D4ED8]'
+                                              : item.status_seleksi === 'Cadangan'
+                                              ? 'bg-[#FEF9C3] text-amber-800 border-amber-500'
                                               : item.status_seleksi === 'Lolos Administrasi'
                                               ? 'bg-[#DCFCE7] text-[#15803D] border-[#15803D]'
                                               : item.status_seleksi === 'Tidak Lolos'
@@ -3191,9 +3434,9 @@ export default function AdminDashboard({ onLeaveAdmin }) {
                                               : 'bg-gray-100 text-gray-700 border-gray-400'
                                           }`}
                                         >
-                                          <option value="Pending">Status: Pending</option>
-                                          <option value="Lolos Administrasi">Status: Cadangan / Lolos Admin</option>
+                                          <option value="Lolos Administrasi">Status: Siap Wawancara</option>
                                           <option value="Diterima">Status: Diterima (Pantukhir)</option>
+                                          <option value="Cadangan">Status: Cadangan</option>
                                           <option value="Tidak Lolos">Status: Tidak Lolos</option>
                                         </select>
 
@@ -3667,6 +3910,48 @@ export default function AdminDashboard({ onLeaveAdmin }) {
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-4 py-4 text-xs">
+              {(() => {
+                const detailScreening = evaluateAdminScreening(selectedItem, ADMIN_PASSING_SCORE);
+                return (
+                  <div
+                    className={`p-4 rounded-2xl border-2 flex flex-wrap items-center justify-between gap-3 ${
+                      detailScreening.isRecommendedPass
+                        ? 'bg-[#DCFCE7] border-[#15803D] text-[#14532D]'
+                        : 'bg-red-50 border-red-600 text-red-900'
+                    }`}
+                  >
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wide">
+                        HASIL SKORING SELEKSI ADMINISTRASI (AMBANG BATAS ≥ {ADMIN_PASSING_SCORE})
+                      </div>
+                      <div className="font-black text-sm mt-0.5">
+                        Skor Pendaftaran: {detailScreening.scores.score_total} / 100 —{' '}
+                        {detailScreening.recommendationLabel}
+                      </div>
+                      <div className="text-[10.5px] font-bold mt-0.5 opacity-90">
+                        Rincian: Status Yatim ({detailScreening.scores.score_yatim} × 35%) • Rasio UKT (
+                        {detailScreening.scores.score_ratio} × 45%) • Tanggungan (
+                        {detailScreening.scores.score_tanggungan} × 20%)
+                      </div>
+                      {detailScreening.reasons.length > 0 && (
+                        <div className="text-[10.5px] font-extrabold mt-1">
+                          Catatan Saran Gugur: {detailScreening.reasons.join(' • ')}
+                        </div>
+                      )}
+                    </div>
+                    <span
+                      className={`px-3 py-1.5 rounded-xl border-2 font-black text-xs shrink-0 ${
+                        detailScreening.isRecommendedPass
+                          ? 'bg-white border-[#15803D] text-[#15803D]'
+                          : 'bg-white border-red-600 text-red-700'
+                      }`}
+                    >
+                      Status: {selectedItem.status_seleksi || 'Pending'}
+                    </span>
+                  </div>
+                );
+              })()}
+
               <div className="bg-[#EFF6FF] p-4 rounded-2xl border border-[#111827] grid grid-cols-2 gap-2 font-semibold">
                 <h4 className="col-span-2 font-black text-[#1D4ED8]">A. DATA PRIBADI</h4>
                 <div><span className="text-gray-500">NIK:</span> {selectedItem.nik}</div>
@@ -3786,15 +4071,20 @@ export default function AdminDashboard({ onLeaveAdmin }) {
             </div>
 
             <div className="border-t-2 border-[#111827] pt-3 flex flex-wrap gap-2 justify-end">
-              {['Pending', 'Lolos Administrasi', 'Diterima', 'Tidak Lolos'].map((st) => (
-                <button
-                  key={st}
-                  onClick={() => handleUpdateStatus(selectedItem.id, st)}
-                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#FFD60A] border-2 border-[#111827] text-xs font-black cursor-pointer"
-                >
-                  Set {st}
-                </button>
-              ))}
+              {['Pending', 'Lolos Administrasi', 'Tidak Lolos', 'Cadangan', 'Diterima'].map((st) => {
+                const isActive = (selectedItem.status_seleksi || 'Pending') === st;
+                return (
+                  <button
+                    key={st}
+                    onClick={() => handleUpdateStatus(selectedItem.id, st)}
+                    className={`px-3 py-1.5 rounded-xl border-2 border-[#111827] text-xs font-black cursor-pointer transition-colors ${
+                      isActive ? 'bg-[#1D4ED8] text-white shadow-[2px_2px_0px_#111827]' : 'bg-white hover:bg-[#FFD60A]'
+                    }`}
+                  >
+                    Set {st}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

@@ -374,6 +374,33 @@ export function calculateBuktyScores(r) {
   };
 }
 
+export const ADMIN_PASSING_SCORE = 75;
+
+// Stage 1 Administrative Screening Evaluator (MS/TMS + Registration Score >= 75)
+export function evaluateAdminScreening(r, passingScore = ADMIN_PASSING_SCORE) {
+  const eligibility = checkBuktyEligibility(r);
+  const scores = calculateBuktyScores(r);
+  const isBelowPassingScore = scores.score_total < passingScore;
+  const reasons = [...eligibility.flags];
+
+  if (isBelowPassingScore) {
+    reasons.push(`Skor pendaftaran ${scores.score_total} < ${passingScore}`);
+  }
+
+  const isRecommendedPass = eligibility.isQualified && !isBelowPassingScore;
+
+  return {
+    eligibility,
+    scores,
+    passingScore,
+    isBelowPassingScore,
+    isRecommendedPass,
+    recommendation: isRecommendedPass ? 'SARAN_LOLOS' : 'SARAN_GUGUR',
+    recommendationLabel: isRecommendedPass ? 'Disarankan Lolos' : 'Disarankan Gugur',
+    reasons,
+  };
+}
+
 // ============================================================================
 // BUKTY INTERVIEW RUBRIC & SCORING ENGINE
 // ============================================================================
@@ -714,6 +741,16 @@ export function calculateInterviewEvaluation(interviewState) {
 
 export const BUKTY_RECIPIENT_QUOTA = 32;
 
+// Determines whether a candidate has passed Stage 1 Administrative Selection and entered the Interview Pipeline
+export function isInInterviewPipeline(r) {
+  if (!r) return false;
+  if (['Lolos Administrasi', 'Diterima', 'Cadangan'].includes(r.status_seleksi)) {
+    return true;
+  }
+  const ev = calculateInterviewEvaluation(r.interview_json);
+  return ev.isAssessed;
+}
+
 // Final Interview Ranking Engine with Top 32 Automatic Recipient Quota
 export function rankInterviewCandidates(registrations = [], quota = BUKTY_RECIPIENT_QUOTA) {
   const safeQuota = Math.max(1, parseInt(quota, 10) || BUKTY_RECIPIENT_QUOTA);
@@ -805,7 +842,7 @@ export function rankInterviewCandidates(registrations = [], quota = BUKTY_RECIPI
           waitingListNumber = eligibleRankCounter - safeQuota;
           quotaCategory = 'CADANGAN';
           quotaLabel = `CADANGAN #${waitingListNumber} (Rank #${eligibleRankCounter})`;
-          autoTargetStatus = 'Lolos Administrasi';
+          autoTargetStatus = 'Cadangan';
         }
       } else {
         quotaCategory = 'GUGUR';
